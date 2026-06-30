@@ -136,6 +136,9 @@ loaders (T9/T12/T13) need it; the table exists, empty.
 chapter count 1,189; every KJV verse resolves; a TVTMS spot-check resolves an LXX
 Psalm-offset ref to the right canonical verse; unknown ref -> `ErrUnknownVerse`.
 **Notes:** v1 = 66 books only; deuterocanon TVTMS rows are skipped (log count).
+**Re-checked:** confirmed T4b still unstarted - no TVTMS parser/package exists,
+`versification_map` is schema-only (empty). Decision stands: defer to T9/T12/T13
+rather than build it with no consumer to verify against.
 
 ---
 

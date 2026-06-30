@@ -79,3 +79,19 @@ CREATE TABLE IF NOT EXISTS cross_references (
 );
 
 CREATE INDEX IF NOT EXISTS idx_xref_from ON cross_references(from_verse);
+
+-- Ticket 5: Strong's lemma/definition dictionary (TBESG + TBESH), the bridge
+-- words.dstrong joins to. ustrong is a self-reference column enabling the
+-- deterministic synonym layer later (not collapsed here).
+
+CREATE TABLE IF NOT EXISTS lexicon (
+    dstrong     TEXT PRIMARY KEY,
+    estrong     TEXT NOT NULL,
+    ustrong     TEXT NOT NULL,
+    language    TEXT NOT NULL,            -- grc | he
+    lemma       TEXT NOT NULL,
+    translit    TEXT NOT NULL,
+    gloss       TEXT NOT NULL,
+    definition  TEXT NOT NULL,
+    def_license TEXT NOT NULL
+);

@@ -134,7 +134,7 @@ Psalm-offset ref to the right canonical verse; unknown ref -> `ErrUnknownVerse`.
 
 # Phase 2 - Lexical reference data (independent of verses)
 
-### T5 - lexicon (TBESG + TBESH)  `NEXT` after T2 (no verse dep)
+### T5 - lexicon (TBESG + TBESH)  `DONE`
 **Goal:** the Strong's lemma/definition dictionary the bridge joins to.
 **Scope:**
 - `lexicon` table: `dstrong (PK), estrong, ustrong, language, lemma, translit,

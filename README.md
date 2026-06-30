@@ -29,5 +29,6 @@ The DB is a build artifact (gitignored); the corpus files are the source of trut
 
 ## Status
 
-Done: T1 (sources), T2 (books), T4a (verses spine, 31,102), T21 (cross-references, 344,794).
-Next: T5/T6 (lexicon/morph), T3 (corpus locator). See PLAN.md.
+Done: T1 (sources), T2 (books), T4a (verses spine, 31,102), T21 (cross-references, 344,794),
+T5 (lexicon, 22,717).
+Next: T6 (morph codes), T3 (corpus locator). See PLAN.md.

@@ -440,12 +440,39 @@ Final: 141,720 words (66,931 Mat-Jhn + 74,789 Act-Rev, exact match to source dat
 counts), 273 compound, 0 unresolved verses. Acts.8.37 spot-checked as 23 all-K/TR
 rows; John.1.1 word #2 spot-checked as surface=ἀρχῇ, lemma=ἀρχή, dstrong=G0746.
 
-### T11 - words: TAHOT (Hebrew OT)  `BLOCKED` on T4, T5, T6
+### T11 - words: TAHOT (Hebrew OT)  `DONE`
 Same `words` shape, from `STEPBible-Data/.../TAHOT*.txt`. Hebrew morphology, Aramaic
 sections, **Ketiv/Qere** preserved (record both as data, do not collapse). Resolve book
 via `dotted`, dstrong via lexicon (Hebrew).
 **Acceptance:** counts match; Gen.1.1 word #1 in/be-, dstrong present; a Ketiv/Qere
 verse keeps both readings; every row carries `source_id` for TAHOT.
+**Notes (as built):** TAHOT's per-row shape is structurally different from TAGNT's,
+not just a Hebrew re-skin. Hebrew words routinely carry an attached prefix morpheme
+(preposition/article/conjunction - "in", "the", "and") joined to the root by "/" in
+the dStrongs, Grammar, AND Expanded-Strong-tags columns alike, e.g. dStrongs
+`H9009/{H7225G}` for "the/beginning" - braces mark which segment is the root (the
+real lexical entry); the prefix has its own Strong's number but no independent
+lemma. Per invariant #5 ("Hebrew may match by root"), this loader stores the
+**braced** segment as dstrong/lemma, not the prefix - verified by direct audit
+that the "/"-segment count and the braced-segment index line up 1:1 across all
+283,734 rows in the corpus (zero mismatches), so the extraction is mechanical, not
+a guess. There is no `editions` equivalent in TAHOT (no NA28/TR/Byz-style
+edition-list concept for the Hebrew OT manuscript tradition) - left as empty
+string, not NULL (the column stays `NOT NULL`).
+**Ketiv/Qere, concretely:** confirmed it is NOT two separate rows per word - one row
+carries the Qere reading with the Ketiv variant described in the Meaning Variants
+text column, and the Type marker preserves the relationship verbatim (eg `Q(K)`,
+never collapsed to a bare `Q`). 13 rows (out of 283,734) have no braced segment at
+all - genuine untagged Qere readings confirmed in the source (an elided word with no
+Ketiv-side lexical entry), not a parsing gap; dstrong/morph_code/lemma are SQL NULL
+for those, counted and reported. 365 word rows reference a dStrong absent from
+TBESH - the same kind of small, real STEPBible cross-file gap as T10's 5/315
+(dstrong/morph_code stay plain TEXT, not hard FKs, for the same reason).
+Final: 283,734 words (76,490+75,051+29,983+102,210, exact match to source data-row
+counts across all four files), 13 untagged, 0 unresolved verses. Gen.1.1 word #1
+spot-checked as surface=בְּ/רֵאשִׁ֖ית (verbatim), lemma=רֵאשִׁית, dstrong=H7225G (the
+root, not the H9003 prefix), morph=Ncfsa; Gen.27.3's Ketiv/Qere verse spot-checked
+in the built DB.
 
 ### T12 - words: Swete LXX (Greek surface)  `BLOCKED` on T4
 Parse `LXX-Swete-1930/01-Swete_word_with_punctuations.csv` (index -> surface) +
@@ -575,17 +602,16 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T21
+DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T11, T21
 T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete), T13 (OSS)
-T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT)
+T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T4b (deterministic verse aligner): runs AFTER the LXX loaders exist (it aligns their
      lxx-* verse rows <-> canonical); shares its alignment core with T22
 T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
 V2 after deps: T22 (word align, shares T4b core), T23, T24
 ```
 
-Recommended next executable order: **T11** (TAHOT Hebrew OT words), then **T12, T13**
-(Swete/OSS LXX words), then **T4b**
+Recommended next executable order: **T12, T13** (Swete/OSS LXX words), then **T4b**
 (the deterministic verse aligner, now that T9 has given it lxx-brenton rows to
 align), then **T14** (integrity), then Phase 5 and 6.
 

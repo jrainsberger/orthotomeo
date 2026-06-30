@@ -140,6 +140,80 @@ Psalm-offset ref to the right canonical verse; unknown ref -> `ErrUnknownVerse`.
 `versification_map` is schema-only (empty). Decision stands: defer to T9/T12/T13
 rather than build it with no consumer to verify against.
 
+**T4b scope audit (2026-06-30), triggered by attempting T9:**
+
+TVTMS's machine-usable "Expanded Version" is **not a static lookup table** -
+it is a conditional rules table. Each data row has a `SourceType` (the
+versification *tradition* the row applies to - not one "Greek" value but
+several: `Greek`, `Greek2`, `GreekUndivided`, `GreekIntegrated`,
+`GrkTitleSeparate`, plus combination types), a `SourceRef` -> `StandardRef`
+pair, an `Action`, and `Tests` (conditions like `Gen.32:33=Last` that must be
+evaluated against *the specific edition's own chapter/verse structure*, not
+looked up from an external authority - though they are mechanically
+computable from the edition's own parsed verse counts).
+
+`Action` is not uniformly an ID remap. Of the ~22,874 Expanded-version data
+rows (all SourceTypes): `Renumber verse` 51.7%, `Keep verse` 36.7% - these
+two are simple 1:1 remaps, 88.4% combined. The remaining ~11.6% need real
+text handling beyond a `native_ref -> verse_id` row: `Concatenation` 2.9%
+(two source verses merge into one standard verse - requires combining
+*text*), `MergedPrev`/`MergedNext` 2.5%, `DividedPrev`/`DividedNext` 2.6%
+(one source verse's text splits across two standard verses), `IfEmpty`
+1.1%, `Renumber title` 1.1%, `CopiedFrom` 0.7%, `Psalm title` 0.5%,
+`MovedFrom` 0.3%. The current `versification_map` schema
+(`native_book/chapter/verse -> verse_id`, one row in, one row out) cannot
+represent Concatenation/Merge/Divide - those need loader-level text
+merge/split logic, not just a bigger map.
+
+**Direct chapter/verse-count audit, Brenton LXX vs KJV** (all 39 OT books,
+verse spans counted from the actual HTML, chapter-label/index pages
+excluded - `cmd/build` source not yet committed, audit script was scratch):
+
+| Book | KJV ch | LXX ch | KJV vrs | LXX vrs | Note |
+|---|---|---|---|---|---|
+| PSA | 150 | 151 | 2,461 | 2,535 | classic Ps 9/10 merge offset + Ps 151 (deuterocanon, no KJV equivalent) |
+| EST | 10 | 10 | 167 | 252 | Brenton ships Esther only as `ESG` (Greek text with the deuterocanonical additions folded in) |
+| DAN | 12 | 12 | 357 | 422 | Brenton ships Daniel only as `DAG` (Susanna/Bel/Song of Three integrated) |
+| EZR | 10 | 23 | 280 | 669 | Brenton's `EZR` is the LXX's combined Ezra+Nehemiah as one book (matches TVTMS's separate `2Es` book token, not `Ezr`/`Neh` - a book-identity question, not a verse-remap question); `NEH` *also* exists as a separate 13-chapter file with its own (smaller) divergence (389 vs 406) - relationship between the two unconfirmed, open question |
+| JER | 52 | 52 | 1,364 | 1,299 | LXX Jeremiah is a genuinely shorter recension (~5% fewer verses), not just reordered |
+| EXO | 40 | 40 | 1,213 | 1,166 | |
+| 1SA | 31 | 31 | 810 | 792 | |
+| PRO | 31 | 31 | 915 | 938 | |
+| 1CH | 29 | 29 | 942 | 931 | |
+| 1KI | 22 | 22 | 816 | 823 | |
+| JOB | 42 | 42 | 1,070 | 1,082 | |
+| 2CH | 36 | 36 | 822 | 832 | |
+| EZK | 48 | 48 | 1,273 | 1,265 | |
+| ISA | 66 | 66 | 1,292 | 1,289 | |
+| NEH | 13 | 13 | 406 | 389 | see EZR note |
+| 2KI | 25 | 25 | 719 | 723 | |
+| GEN | 50 | 50 | 1,533 | 1,532 | |
+| JOS | 24 | 24 | 658 | 659 | |
+| 2SA | 24 | 24 | 695 | 697 | |
+| DEU | 34 | 34 | 959 | 958 | |
+| LAM | 5 | 5 | 154 | 153 | |
+| JOL | 3 | 4 | 73 | 73 | pure chapter-boundary shift, verse count matches exactly - no content gain/loss |
+| MAL | 4 | 3 | 55 | 55 | pure chapter-boundary shift (opposite direction), verse count matches exactly |
+| AMO, ECC, HAB, HAG, HOS, JDG, LEV, MIC, NAM, NUM, OBA, RUT, SNG, ZEC, ZEP | - | - | - | - | exact match, no divergence (15 of 39 books) |
+
+24 of 39 OT books diverge from KJV in chapter and/or verse count; 15 match
+exactly. The divergences split into two different *kinds* of problem:
+
+1. **Pure renumbering/boundary shifts** (JOL, MAL, and most of the small
+   +/-1 to +/-20 verse cases like GEN, JOS, 2SA, DEU, LAM, ISA, EZK, 2KI,
+   1KI, 1CH) - every verse has real KJV-equivalent content, just at a
+   different address. This is what `versification_map` was designed for.
+2. **Genuine added/removed content** (PSA's Ps 151, EST's and DAN's Greek
+   additions, JER's shorter recension, EZR's combined-book structure) -
+   some LXX verses have **no KJV verse to map to at all**. No TVTMS engine
+   fixes this; the existing skip-and-report pattern (proven in T8 for WEB's
+   7 unresolvable verses) is the correct handling, not a bug to solve.
+
+**Not yet decided:** whether to build Tests-evaluation + Keep/Renumber-only
+versification_map population (covers category 1, ~88% of rows project-wide)
+now, with category 2 and the Concatenation/Merge/Divide actions staying
+loud documented skips: T9 is paused pending this decision.
+
 ---
 
 # Phase 2 - Lexical reference data (independent of verses)
@@ -222,12 +296,22 @@ textual notes, not bugs. 31,095 of 31,102 canonical verses loaded across all 66
 books; zero markup leakage verified across every row; Gen.1.1/John.3.16/Psalm 3
 (superscription + poetry + Selah) spot-checked against the built DB.
 
-### T9 - verse_text: Brenton LXX (HTML)  `BLOCKED` on T4
+### T9 - verse_text: Brenton LXX (HTML)  `BLOCKED` on T4b
 Parse `bible-text/LXX/eng-Brenton_html/*.htm`. Extract `<span class="verse" id="VN">`
 + following text; strip footnote `<a class="notemark">`/`<span class="popup">` and the
 bottom `.footnote` block. Map LXX versification -> canonical via `verses.Resolve`.
 **Acceptance:** a known verse extracts clean (no HTML, no footnote markers); LXX
 Psalm-offset verse lands on the right canonical `verse_id`; 66-book scope only.
+**Status (2026-06-30):** paused mid-attempt - HTML extraction itself is
+straightforward (confirmed format: `<div class="main">`...`<div class="footnote">`
+boundary, inline `<a class="notemark">` footnote markers, `<div class='chapterlabel'
+id="V0">` to exclude, book code from filename `XXXNN.htm`, two code aliases needed
+- `DAN`->`DAG`, `EST`->`ESG`). What's NOT done: the versification mapping this
+ticket's own acceptance criterion requires. Turned out to need T4b (TVTMS), which
+turned out to need real Tests-evaluation logic, not a static map - see the T4
+"T4b scope audit" note for the full chapter/verse divergence data (24 of 39 OT
+books diverge from KJV) and the category-1/category-2 split. T9 resumes once T4b's
+scope is decided.
 
 ### T10 - words: TAGNT (Greek NT)  `BLOCKED` on T4, T5, T6
 **Goal:** the workhorse tagged text and the foundation of complete-or-fail.

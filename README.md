@@ -30,5 +30,5 @@ The DB is a build artifact (gitignored); the corpus files are the source of trut
 ## Status
 
 Done: T1 (sources), T2 (books), T4a (verses spine, 31,102), T21 (cross-references, 344,794),
-T5 (lexicon, 22,717), T6 (morph codes, 2,565), T3 (corpus locator).
-Next: T4 design huddle, then T7-T13 (text/word import). See PLAN.md.
+T5 (lexicon, 22,717), T6 (morph codes, 2,565), T3 (corpus locator), T7 (KJV+ASV text, 62,204).
+Next: T8 (WEB/USFM), then T9-T13. T4b stays deferred until T9/T12/T13 need it. See PLAN.md.

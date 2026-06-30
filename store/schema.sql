@@ -104,3 +104,18 @@ CREATE TABLE IF NOT EXISTS morph_codes (
     language    TEXT NOT NULL,            -- grc | he
     description TEXT NOT NULL
 );
+
+-- Ticket 7: verbatim per-edition English prose, FK to verses + sources.
+-- native_ref is the human-readable reference as the edition itself would
+-- cite it (book name + chapter:verse), independent of the internal verse_id.
+
+CREATE TABLE IF NOT EXISTS verse_text (
+    id        INTEGER PRIMARY KEY,
+    verse_id  INTEGER NOT NULL REFERENCES verses(id),
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    native_ref TEXT   NOT NULL,
+    text      TEXT    NOT NULL,
+    UNIQUE (verse_id, source_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_verse_text_verse ON verse_text(verse_id);

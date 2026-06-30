@@ -177,7 +177,7 @@ illustrative, not literal. 1,644 Greek + 921 Hebrew = 2,565 codes loaded.
 
 # Phase 3 - Text import (FK to verses + sources)
 
-### T7 - verse_text: KJV + ASV (JSON)  `BLOCKED` on T4
+### T7 - verse_text: KJV + ASV (JSON)  `DONE`
 **Goal:** English prose, the editions the deliverables quote.
 **Scope:** `verse_text` table `(id, verse_id FK, source_id FK, native_ref, text)`.
 Parse `bible-text/KJV/KJV.json` and `ASV/ASV.json` (identical shape: books[].chapters[].verses[]).
@@ -185,8 +185,13 @@ Resolve book via `name-en`, verse via `verses.Resolve`.
 **Schema delta:** `verse_text`.
 **Acceptance:** KJV row count == verses count (31,102); Gen.1.1 / John.3.16 text
 matches the file verbatim; every row resolves a `verse_id` and carries the right `source_id`.
-**Notes:** confirm `name-en` values match KJV.json book strings exactly (e.g.
-"Song of Solomon", "Revelation"); reconcile any mismatch into book_names here.
+**Notes (as built):** ASV.json's book names, chapter count, and verse count are
+byte-identical to KJV.json's (verified: same 66 names, same 1,189 chapters, same
+31,102 verses) - no book_names reconciliation was needed. Unlike crossrefs,
+an unresolvable verse here is a hard error, not a skip: KJV/ASV define the
+canonical spine, so a miss would mean the spine itself is wrong. 31,102 KJV +
+31,102 ASV = 62,204 rows; Gen.1.1/John.3.16 spot-checked verbatim against the
+built DB for both editions.
 
 ### T8 - verse_text: WEB (USFM)  `BLOCKED` on T7
 Parse `bible-text/WEB/*.usfm` (`NN-XXXeng-web.usfm`). Strip `\w word|strong=...\w*`

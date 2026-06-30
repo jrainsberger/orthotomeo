@@ -19,6 +19,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/store"
 	"github.com/jrainsberger/orthotomeo/verses"
+	"github.com/jrainsberger/orthotomeo/versetext"
 )
 
 func main() {
@@ -78,9 +79,13 @@ func run(out, root, reference string) error {
 	if err != nil {
 		return err
 	}
+	nText, err := loadVerseText(db, roots)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, out)
 	return nil
 }
 
@@ -158,6 +163,31 @@ func loadLexicon(db *sql.DB, roots []string) (int, error) {
 	}
 
 	return nGreek + nHebrew, nil
+}
+
+// loadVerseText loads KJV and ASV (identical JSON shape).
+func loadVerseText(db *sql.DB, roots []string) (int, error) {
+	kjv, err := openSource("KJV", roots)
+	if err != nil {
+		return 0, err
+	}
+	defer kjv.Close()
+	nKJV, err := versetext.Load(db, kjv, "KJV")
+	if err != nil {
+		return 0, err
+	}
+
+	asv, err := openSource("ASV", roots)
+	if err != nil {
+		return 0, err
+	}
+	defer asv.Close()
+	nASV, err := versetext.Load(db, asv, "ASV")
+	if err != nil {
+		return 0, err
+	}
+
+	return nKJV + nASV, nil
 }
 
 // loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).

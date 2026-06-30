@@ -19,6 +19,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/morph"
 	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/store"
+	"github.com/jrainsberger/orthotomeo/swetewords"
 	"github.com/jrainsberger/orthotomeo/tagnt"
 	"github.com/jrainsberger/orthotomeo/tahot"
 	"github.com/jrainsberger/orthotomeo/verses"
@@ -103,9 +104,13 @@ func run(out, root, reference string) error {
 	if err != nil {
 		return err
 	}
+	nSwete, nSweteSkip, err := loadSweteWords(db, roots)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files), %d TAGNT words (%d skipped, %d compound), %d TAHOT words (%d skipped, %d untagged) -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, nWords, nWordsSkip, nCompound, nHebWords, nHebSkip, nUntagged, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files), %d TAGNT words (%d skipped, %d compound), %d TAHOT words (%d skipped, %d untagged), %d Swete words (%d deuterocanon verses skipped) -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, nWords, nWordsSkip, nCompound, nHebWords, nHebSkip, nUntagged, nSwete, nSweteSkip, out)
 	return nil
 }
 
@@ -336,6 +341,47 @@ func loadTAHOT(db *sql.DB, roots []string) (inserted, skipped, untagged int, err
 		untagged += unt
 	}
 	return inserted, skipped, untagged, nil
+}
+
+// loadSweteWords loads the Swete LXX Greek surface-form word stream. The
+// "Swete" source_file is a glob over LXX-Swete-1930/*.csv (versification,
+// two word variants, transliteration); only the versification file and the
+// with-punctuation word file are the ones this loader needs.
+func loadSweteWords(db *sql.DB, roots []string) (inserted, skipped int, err error) {
+	src, err := sourceByCode("Swete")
+	if err != nil {
+		return 0, 0, err
+	}
+	paths, err := corpus.Locate(src, roots...)
+	if err != nil {
+		return 0, 0, fmt.Errorf("locate Swete: %w", err)
+	}
+
+	var versificationPath, wordsPath string
+	for _, p := range paths {
+		switch filepath.Base(p) {
+		case "00-Swete_versification.csv":
+			versificationPath = p
+		case "01-Swete_word_with_punctuations.csv":
+			wordsPath = p
+		}
+	}
+	if versificationPath == "" || wordsPath == "" {
+		return 0, 0, fmt.Errorf("Swete: expected versification + with-punctuation word CSVs, found %v", paths)
+	}
+
+	vf, err := os.Open(versificationPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open %s: %w", versificationPath, err)
+	}
+	defer vf.Close()
+	wf, err := os.Open(wordsPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open %s: %w", wordsPath, err)
+	}
+	defer wf.Close()
+
+	return swetewords.Load(db, vf, wf)
 }
 
 // loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).

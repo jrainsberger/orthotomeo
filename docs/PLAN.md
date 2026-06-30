@@ -474,7 +474,7 @@ spot-checked as surface=בְּ/רֵאשִׁ֖ית (verbatim), lemma=רֵאשִׁ
 root, not the H9003 prefix), morph=Ncfsa; Gen.27.3's Ketiv/Qere verse spot-checked
 in the built DB.
 
-### T12 - words: Swete LXX (Greek surface)  `BLOCKED` on T4
+### T12 - words: Swete LXX (Greek surface)  `DONE`
 Parse `LXX-Swete-1930/01-Swete_word_with_punctuations.csv` (index -> surface) +
 `00-Swete_versification.csv` (word-index -> ref). Build per-word rows with `surface`
 only (lemma/dstrong/morph NULL - Swete carries none). Treat Swete text as Public
@@ -486,6 +486,31 @@ NULL lemma.
 **Notes:** parallel per-source stream - NOT merged with OSS (see T13). Per the T4b
 decision, Swete loads into its OWN versification (`versification='lxx-swete'`,
 get-or-create verse rows, `verse_id` NOT NULL); no canonical mapping at load.
+**Notes (as built):** the versification CSV only lists VERSE-START word indices
+(sparse), not one row per word - a verse's word range is `[this row's index, next
+row's index - 1]`, with the last entry running to end-of-file. Both CSVs are
+confirmed index-ordered with no gaps (`NR == index` holds for the word file; the
+versification file's indices are strictly ascending), so this is a mechanical
+range computation, not a guess. Four Swete book codes don't match our canonical
+`dotted` scheme (`Eze`->`Ezk`, `Joe`->`Jol`, `Nah`->`Nam`, `Sol`->`Sng`) - aliased
+the same way T9's `DAG`->`DAN`/`ESG`->`EST` were; the other ~21 distinct codes in
+the versification file are deuterocanon/extra-biblical (1 Enoch, Maccabees, Tobit,
+Susanna, Odes, ...) and fall through `books.ErrUnknownBook` to a counted skip.
+**Caught a self-deadlock during testing, not present in any prior loader**:
+`store.Open` pins the connection pool to 1 (`SetMaxOpenConns(1)`), and this loader
+calls `books.Resolve` inside the per-verse loop, AFTER `tx := db.Begin()` has
+already claimed the single connection - the original code called
+`books.Resolve(db, ...)` (against the pool) instead of `books.Resolve(tx, ...)`
+(against the open transaction), which blocks forever waiting for a connection the
+transaction is already holding. Fixed by passing `tx`. T9-T11 never hit this
+because they resolve every book ONCE before opening the transaction; T12 resolves
+book per verse-range row, inside the loop, which is what exposed it. Worth
+auditing T13 for the same pattern before it's written.
+Final: 476,937 words across the 66-book canonical scope (476,937 + 132,585
+deuterocanon-skipped = 609,522, the word file's exact total - confirmed no word is
+silently dropped, only correctly routed to "out of v1 scope"); 7,340 deuterocanon
+verses skipped. Gen.1.1 word #3 spot-checked as ἐποίησεν (epoiesen); every Swete
+row confirmed NULL lemma/dstrong/morph_code and `versification='lxx-swete'`.
 
 ### T13 - words: OSS LXX lemma  `BLOCKED` on T4
 Parse `bible-text/LXX/GreekResources-master/LxxLemmas/<Book>.js` (JSON objects keyed
@@ -602,8 +627,8 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T11, T21
-T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete), T13 (OSS)
+DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T21
+T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (OSS)
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T4b (deterministic verse aligner): runs AFTER the LXX loaders exist (it aligns their
      lxx-* verse rows <-> canonical); shares its alignment core with T22
@@ -611,8 +636,9 @@ T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
 V2 after deps: T22 (word align, shares T4b core), T23, T24
 ```
 
-Recommended next executable order: **T12, T13** (Swete/OSS LXX words), then **T4b**
-(the deterministic verse aligner, now that T9 has given it lxx-brenton rows to
-align), then **T14** (integrity), then Phase 5 and 6.
+Recommended next executable order: **T13** (OSS LXX lemma words - check it for
+the same db-vs-tx connection-pool pattern that caused T12's self-deadlock), then
+**T4b** (the deterministic verse aligner, now that T9/T12 have given it lxx-*
+verse rows to align), then **T14** (integrity), then Phase 5 and 6.
 
 Build the generic deterministic sequence aligner once (for T4b) and reuse it for T22.

@@ -39,30 +39,47 @@ CREATE TABLE IF NOT EXISTS book_names (
 
 CREATE INDEX IF NOT EXISTS idx_book_names_book ON book_names(book_id);
 
--- Ticket 4: canonical verse spine + versification divergence map.
--- Canonical versification = KJV/English Protestant, enumerated from KJV.json.
--- versification_map holds only the rows where an edition's native ref differs
--- from canonical (populated by the LXX loaders via TVTMS; T4b).
+-- Ticket 4: per-edition verse rows + deterministic verse alignment.
+-- Canonical versification = KJV/English Protestant, enumerated from KJV.json
+-- (versification='canonical'). Each LXX edition (Brenton, Swete, OSS) loads
+-- completely into its OWN versification tag (lxx-brenton, lxx-swete,
+-- lxx-oss) - never forced onto the canonical spine at load time (invariant
+-- #4: never assume 1:1 across editions). verse_alignment (T4b) is the
+-- separate, deterministic cross-reference between an edition's verse rows
+-- and the canonical rows; this supersedes the original versification_map
+-- design, which could only represent a 1:1 remap and not LXX-only content
+-- (e.g. Psalm 151), canonical-only content (e.g. verses absent from the
+-- shorter LXX Jeremiah), or genuine merges/divides.
 
 CREATE TABLE IF NOT EXISTS verses (
-    id       INTEGER PRIMARY KEY,
-    book_id  INTEGER NOT NULL REFERENCES books(id),
-    chapter  INTEGER NOT NULL,
-    verse    INTEGER NOT NULL,
-    UNIQUE (book_id, chapter, verse)
+    id             INTEGER PRIMARY KEY,
+    versification  TEXT    NOT NULL DEFAULT 'canonical', -- canonical | lxx-brenton | lxx-swete | lxx-oss
+    book_id        INTEGER NOT NULL REFERENCES books(id),
+    chapter        INTEGER NOT NULL,
+    verse          INTEGER NOT NULL,
+    UNIQUE (versification, book_id, chapter, verse)
 );
 
 CREATE INDEX IF NOT EXISTS idx_verses_book ON verses(book_id);
 
-CREATE TABLE IF NOT EXISTS versification_map (
-    id              INTEGER PRIMARY KEY,
-    source_id       INTEGER NOT NULL REFERENCES sources(id),
-    native_book     TEXT    NOT NULL,           -- book code in that source's scheme
-    native_chapter  INTEGER NOT NULL,
-    native_verse    INTEGER NOT NULL,
-    verse_id        INTEGER NOT NULL REFERENCES verses(id),
-    UNIQUE (source_id, native_book, native_chapter, native_verse)
+-- T4b: typed many-to-many alignment between an edition's own verse rows and
+-- the canonical rows. relation in {exact, renumber, merge, divide, title,
+-- moved}; group_id ties the members of an n:1 merge or 1:n divide. Absence
+-- of an alignment row is itself data - LXX-only and canonical-only content
+-- are not skips or bugs, they simply have no counterpart to align to.
+
+CREATE TABLE IF NOT EXISTS verse_alignment (
+    id                  INTEGER PRIMARY KEY,
+    canonical_verse_id  INTEGER NOT NULL REFERENCES verses(id),
+    edition_verse_id    INTEGER NOT NULL REFERENCES verses(id),
+    relation            TEXT    NOT NULL,   -- exact | renumber | merge | divide | title | moved
+    group_id            INTEGER,            -- ties members of a merge/divide group
+    confidence          REAL    NOT NULL,
+    source_id           INTEGER NOT NULL REFERENCES sources(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_verse_alignment_canonical ON verse_alignment(canonical_verse_id);
+CREATE INDEX IF NOT EXISTS idx_verse_alignment_edition ON verse_alignment(edition_verse_id);
 
 -- Ticket 21: deterministic cross-references (OpenBible.info / TSK, CC-BY).
 -- to_verse_end is non-null only for ranged targets (e.g. Col.1.16-Col.1.17).

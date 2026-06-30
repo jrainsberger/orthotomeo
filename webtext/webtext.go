@@ -90,7 +90,7 @@ func Load(db *sql.DB, r io.Reader) (code string, inserted, skipped int, loaded b
 		return code, 0, 0, false, fmt.Errorf("source %q not seeded: %w", sourceCode, err)
 	}
 
-	res, err := verses.NewResolver(db, "usfm")
+	res, err := verses.NewResolver(db, "usfm", verses.Canonical)
 	if err != nil {
 		return code, 0, 0, false, err
 	}

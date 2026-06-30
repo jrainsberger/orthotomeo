@@ -65,11 +65,11 @@ func TestResolveAcrossSchemes(t *testing.T) {
 	db, _ := newSpine(t)
 
 	// The same canonical verse is reachable from any scheme's book code.
-	osis, err := verses.NewResolver(db, "osis")
+	osis, err := verses.NewResolver(db, "osis", verses.Canonical)
 	if err != nil {
 		t.Fatalf("osis resolver: %v", err)
 	}
-	dotted, err := verses.NewResolver(db, "dotted")
+	dotted, err := verses.NewResolver(db, "dotted", verses.Canonical)
 	if err != nil {
 		t.Fatalf("dotted resolver: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestResolveAcrossSchemes(t *testing.T) {
 
 func TestResolveUnknownVerse(t *testing.T) {
 	db, _ := newSpine(t)
-	r, err := verses.NewResolver(db, "osis")
+	r, err := verses.NewResolver(db, "osis", verses.Canonical)
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
@@ -103,5 +103,72 @@ func TestResolveUnknownVerse(t *testing.T) {
 		if _, err := r.Resolve(ref); !errors.Is(err, verses.ErrUnknownVerse) {
 			t.Errorf("Resolve(%q) err = %v, want ErrUnknownVerse", ref, err)
 		}
+	}
+}
+
+func TestResolverScopedToVersification(t *testing.T) {
+	db, _ := newSpine(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	bookID, err := books.Resolve(tx, "osis", "1Sam")
+	if err != nil {
+		t.Fatalf("resolve book: %v", err)
+	}
+	// A different versification can carry a DIFFERENT verse count for the
+	// same (book, chapter) without colliding with the canonical row.
+	if _, err := verses.GetOrCreateVerse(tx, "lxx-brenton", bookID, 1, 1); err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	if _, err := verses.GetOrCreateVerse(tx, "lxx-brenton", bookID, 1, 99); err != nil {
+		t.Fatalf("get-or-create: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	canonical, err := verses.NewResolver(db, "osis", verses.Canonical)
+	if err != nil {
+		t.Fatalf("canonical resolver: %v", err)
+	}
+	if _, err := canonical.Resolve("1Sam.1.99"); !errors.Is(err, verses.ErrUnknownVerse) {
+		t.Errorf("canonical resolver sees lxx-brenton-only verse 1Sam.1.99: err = %v", err)
+	}
+
+	brenton, err := verses.NewResolver(db, "osis", "lxx-brenton")
+	if err != nil {
+		t.Fatalf("brenton resolver: %v", err)
+	}
+	if _, err := brenton.Resolve("1Sam.1.99"); err != nil {
+		t.Errorf("brenton resolver should see its own verse 1Sam.1.99: %v", err)
+	}
+	if _, err := brenton.Resolve("Mark.1.1"); !errors.Is(err, verses.ErrUnknownVerse) {
+		t.Errorf("brenton resolver sees canonical-only verse Mark.1.1: err = %v", err)
+	}
+}
+
+func TestGetOrCreateVerseIsIdempotent(t *testing.T) {
+	db, _ := newSpine(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+	bookID, err := books.Resolve(tx, "osis", "1Sam")
+	if err != nil {
+		t.Fatalf("resolve book: %v", err)
+	}
+
+	id1, err := verses.GetOrCreateVerse(tx, "lxx-brenton", bookID, 1, 1)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	id2, err := verses.GetOrCreateVerse(tx, "lxx-brenton", bookID, 1, 1)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if id1 != id2 {
+		t.Errorf("GetOrCreateVerse returned different ids on repeat calls: %d != %d", id1, id2)
 	}
 }

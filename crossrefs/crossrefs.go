@@ -28,7 +28,7 @@ func Load(db *sql.DB, r io.Reader) (inserted, skipped int, err error) {
 		return 0, 0, fmt.Errorf("source %q not seeded: %w", sourceCode, err)
 	}
 
-	res, err := verses.NewResolver(db, "osis")
+	res, err := verses.NewResolver(db, "osis", verses.Canonical)
 	if err != nil {
 		return 0, 0, err
 	}

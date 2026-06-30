@@ -19,6 +19,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/morph"
 	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/store"
+	"github.com/jrainsberger/orthotomeo/tagnt"
 	"github.com/jrainsberger/orthotomeo/verses"
 	"github.com/jrainsberger/orthotomeo/versetext"
 	"github.com/jrainsberger/orthotomeo/webtext"
@@ -93,9 +94,13 @@ func run(out, root, reference string) error {
 	if err != nil {
 		return err
 	}
+	nWords, nWordsSkip, nCompound, err := loadTAGNT(db, roots)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files) -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files), %d TAGNT words (%d skipped, %d compound) -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, nWords, nWordsSkip, nCompound, out)
 	return nil
 }
 
@@ -268,6 +273,35 @@ func loadBrentonText(db *sql.DB, roots []string) (inserted, nFiles int, err erro
 		nFiles++
 	}
 	return inserted, nFiles, nil
+}
+
+// loadTAGNT loads both TAGNT TSVs (Mat-Jhn, Act-Rev), both under the single
+// "TAGNT" source code.
+func loadTAGNT(db *sql.DB, roots []string) (inserted, skipped, compound int, err error) {
+	src, err := sourceByCode("TAGNT")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	paths, err := corpus.Locate(src, roots...)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("locate TAGNT: %w", err)
+	}
+
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("open %s: %w", path, err)
+		}
+		n, skip, comp, err := tagnt.Load(db, f)
+		f.Close()
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("%s: %w", path, err)
+		}
+		inserted += n
+		skipped += skip
+		compound += comp
+	}
+	return inserted, skipped, compound, nil
 }
 
 // loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).

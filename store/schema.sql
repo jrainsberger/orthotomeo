@@ -136,3 +136,33 @@ CREATE TABLE IF NOT EXISTS verse_text (
 );
 
 CREATE INDEX IF NOT EXISTS idx_verse_text_verse ON verse_text(verse_id);
+
+-- Ticket 10: tagged original-language words, one row per word instance per
+-- source (TAGNT Greek NT; TAHOT Hebrew OT and the LXX word streams follow
+-- in T11-T13). source_locator (the source file's own ref, e.g.
+-- "Mat.1.1#01=NKO") is the row key, NOT (verse_id, source_id, word_no) -
+-- variant readings legitimately share a word_no. dstrong/morph_code are
+-- plain TEXT, not hard FKs: STEPBible's TAGNT and TBESG/morph-code files
+-- have a small number of known cross-file gaps (confirmed: 5 of 5,575
+-- distinct TAGNT dStrongs are absent from TBESG), and a compound-tagged
+-- word (one surface token spanning two Strong's numbers, eg μήποτε = μή +
+-- ποτε) has no single dStrong to store - both are left NULL rather than
+-- failing the whole load or guessing. The Strong's/morph bridge is a
+-- join-time lookup (invariant #5), not a load-time constraint.
+
+CREATE TABLE IF NOT EXISTS words (
+    id             INTEGER PRIMARY KEY,
+    verse_id       INTEGER NOT NULL REFERENCES verses(id),
+    source_id      INTEGER NOT NULL REFERENCES sources(id),
+    word_no        INTEGER NOT NULL,
+    surface        TEXT,
+    lemma          TEXT,
+    dstrong        TEXT,
+    morph_code     TEXT,
+    attestation    TEXT    NOT NULL,   -- N/K/O Type from the ref, eg "NKO", "K", "N(k)O"
+    editions       TEXT    NOT NULL,   -- eg "NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz"
+    source_locator TEXT    NOT NULL UNIQUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_words_verse ON words(verse_id);
+CREATE INDEX IF NOT EXISTS idx_words_dstrong ON words(dstrong);

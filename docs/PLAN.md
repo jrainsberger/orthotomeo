@@ -410,7 +410,7 @@ Gen.1.1, the 1Ki.2 doublet merge, the DAG/ESG book aliasing, and Psalm 151
 (loaded with no canonical counterpart, as designed) all spot-checked against the
 built DB.
 
-### T10 - words: TAGNT (Greek NT)  `BLOCKED` on T4, T5, T6
+### T10 - words: TAGNT (Greek NT)  `DONE`
 **Goal:** the workhorse tagged text and the foundation of complete-or-fail.
 **Scope:** `words` table `(id, verse_id FK, source_id FK, word_no, surface, lemma,
 dstrong FK, morph_code FK, attestation, editions, source_locator)`.
@@ -424,6 +424,21 @@ Store `attestation` (N/K/O Type) AND `editions` (the NA28+...+TR+Byz list).
 verse (Acts 8:37) loads as all-`K`/`TR` rows; John.1.1 word #2 = arche, lemma arche,
 dstrong G0746; every word resolves verse + dstrong (or flags unresolved as data).
 **Notes:** this ticket establishes the complete-or-fail contract used by T14 and Phase 4.
+**Notes (as built):** "data starts ~line 95" undersold it - the file repeats its own
+"Word & Type" column-header row AND a Greek/English/grammar preview block before
+**every verse**, not just once at the top. The only reliable data-row filter is the
+ref field's own shape (`Book.C.V#NN=Type`), checked per line throughout the whole
+file, not a fixed skip-N-lines-then-read approach. `dstrong`/`morph_code` are plain
+TEXT, not hard FKs (see schema comment): 5 of 5,575 distinct TAGNT dStrongs (315 word
+rows) are absent from TBESG - a real STEPBible cross-file gap, confirmed not a parsing
+bug. A rarer case (273 rows, 0.19%) is a single surface token spanning two Strong's
+numbers (eg μήποτε = "G3361=PRT-N + G4218=PRT" / "μήποτε=lest + πότε=when") - both
+columns get SQL NULL rather than a guessed split, counted and reported, not silent.
+Verse resolution against the canonical KJV-based spine: **zero skips** across the
+full NT (unlike WEB/T8, TAGNT's Greek-NT versification matches KJV's exactly).
+Final: 141,720 words (66,931 Mat-Jhn + 74,789 Act-Rev, exact match to source data-row
+counts), 273 compound, 0 unresolved verses. Acts.8.37 spot-checked as 23 all-K/TR
+rows; John.1.1 word #2 spot-checked as surface=ἀρχῇ, lemma=ἀρχή, dstrong=G0746.
 
 ### T11 - words: TAHOT (Hebrew OT)  `BLOCKED` on T4, T5, T6
 Same `words` shape, from `STEPBible-Data/.../TAHOT*.txt`. Hebrew morphology, Aramaic
@@ -560,17 +575,17 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T21
-T4a (verses spine) -> T9 (Brenton, per-edition), T12 (Swete), T13 (OSS)
-T4a,T5,T6 -> T10 (TAGNT), T11 (TAHOT)
+DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T21
+T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete), T13 (OSS)
+T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT)
 T4b (deterministic verse aligner): runs AFTER the LXX loaders exist (it aligns their
      lxx-* verse rows <-> canonical); shares its alignment core with T22
 T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
 V2 after deps: T22 (word align, shares T4b core), T23, T24
 ```
 
-Recommended next executable order: **T10, T11** (TAGNT/TAHOT words - the
-complete-or-fail foundation), then **T12, T13** (Swete/OSS LXX words), then **T4b**
+Recommended next executable order: **T11** (TAHOT Hebrew OT words), then **T12, T13**
+(Swete/OSS LXX words), then **T4b**
 (the deterministic verse aligner, now that T9 has given it lxx-brenton rows to
 align), then **T14** (integrity), then Phase 5 and 6.
 

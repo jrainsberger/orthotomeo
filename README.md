@@ -39,8 +39,12 @@ T10 (TAGNT, 141,720 words across both Greek-NT TSVs, 0 unresolved verses),
 T11 (TAHOT, 283,734 words across all four Hebrew-OT TSVs, 0 unresolved verses -
 Hebrew prefix+root words resolved to the root per invariant #5),
 T12 (Swete LXX, 476,937 words, its own `versification='lxx-swete'`, surface-only
-- no lemma/dstrong/morph, Swete carries none).
-Next: T13 (OSS LXX lemma words), then T4b (the deterministic verse aligner:
-sequence alignment over parsed data, no TVTMS rule engine, no hand-curation, no
-LLM - invariant #9), then T14. See PLAN.md's T4 "DECISION" block for the full
+- no lemma/dstrong/morph, Swete carries none),
+T13 (OSS LXX lemma, 425,299 words across 34 in-scope books, its own
+`versification='lxx-oss'`, lemma-only - multi-recension and deuterocanon files
+intentionally unloaded, see PLAN.md).
+Phase 3 (text/word import) is now complete. Next: T4b (the deterministic verse
+aligner: sequence alignment over parsed data, no TVTMS rule engine, no
+hand-curation, no LLM - invariant #9), then T14 (the complete-or-fail integrity
+self-test over T10-T13). See PLAN.md's T4 "DECISION" block for the full
 per-edition-versification design.

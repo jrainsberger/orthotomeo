@@ -512,7 +512,7 @@ silently dropped, only correctly routed to "out of v1 scope"); 7,340 deuterocano
 verses skipped. Gen.1.1 word #3 spot-checked as ἐποίησεν (epoiesen); every Swete
 row confirmed NULL lemma/dstrong/morph_code and `versification='lxx-swete'`.
 
-### T13 - words: OSS LXX lemma  `BLOCKED` on T4
+### T13 - words: OSS LXX lemma  `DONE`
 Parse `bible-text/LXX/GreekResources-master/LxxLemmas/<Book>.js` (JSON objects keyed
 `Book.C.V` -> array of `{key, lemma}`). Build per-word rows with `lemma` only (surface
 NULL). A separate stream from Swete - **do not assume word-position identity** (verified:
@@ -524,6 +524,50 @@ carry OSS `source_id`, NULL surface; per-verse lemma counts logged for later ali
 (`versification='lxx-oss'`, get-or-create verse rows, `verse_id` NOT NULL). Each LXX
 source (brenton/swete/oss) keeps its own versification tag; relating them is alignment
 work, not load work.
+**Notes (as built):** the 59-file `LxxLemmas/*.js` set turned out to need a real
+scoping decision, not just a parse. Two recurring patterns required the same "don't
+guess, skip and document" handling already established in T9's Brenton EZR skip:
+- **Multi-recension witnesses** (`JoshA`/`JoshB`, `JudgA`/`JudgB`, `DanOG`/`DanTh`):
+  direct inspection confirmed `JudgA`/`JudgB` are near-complete parallel full texts
+  of Judges (617 of 618 verse keys overlap - two real competing witnesses), while
+  `JoshA` is only a 96-verse fragment of divergent readings against `JoshB`'s
+  complete 659-verse text - genuinely different situations, but neither has a
+  mechanical "pick this one" rule. Both stay unloaded (invariant #9: no
+  hand-curation) rather than silently choosing one recension as "the" text.
+- **Deuterocanon/extra-biblical** (1-4 Maccabees, Baruch, Epistle of Jeremiah,
+  Judith, Odes, Psalms of Solomon, Sirach, Susanna/Bel OG+Th, Tobit, Wisdom) and
+  the combined-book `1Esd`/`2Esd` (`2Esd` = LXX's combined Ezra+Nehemiah, the
+  same "2 Esdras" identity question T9 left open for Brenton's `EZR.htm`).
+A `bookAlias` map of the 34 in-scope book tokens doubles as the scope allow-list:
+anything not in it is a counted skip, not an error - so the 25 out-of-scope files
+need no separate file-level skip logic, the per-key book-token lookup handles it
+uniformly. Two tokens differ from their filename (`Eccl.js` keys are `Qoh.*`,
+`Song.js` keys are `Cant.*` - confirmed by direct check that every other file's
+key token equals its filename stem).
+**Lettered sub-verse keys** (eg Greek Esther's heavy use of addition verses,
+`Esth.1.1a`..`Esth.1.1s`) needed the same merge T9 applied to Brenton's lettered
+doublets - concatenated in letter order into one verse row, since this schema has
+no sub-verse addressing. Confirmed via direct corpus scan this pattern appears in
+15 of the 34 loaded files (1Kgs, 1Sam, 2Chr, 2Kgs, 2Sam, Exod, Job, JoshB, Prov, Ps,
+and others), not just Esther - genuinely common, not a one-off. Go's JSON decode
+into a map does not preserve source key order, so letter order is reconstructed by
+explicit string sort (`"" < "a" < "b"...`), not insertion order.
+**One real anomaly surfaced and is reported, not guessed at**: `Jer.7.27/28` (a
+combined-verse-range key, the only one in any of the 34 loaded files) does not
+match the `Book.Chapter.Verse[letter]` shape and is counted as malformed rather
+than parsed by a guessed split. A full-corpus scan confirmed exactly 45 such
+malformed keys exist across all 59 files (mostly `Sir.Prolog.*` and similar in the
+already-out-of-scope deuterocanon files) - the parser's malformed count matched
+this hand-verified total exactly, confirming nothing is being silently misparsed.
+**Caught the same self-deadlock class T12 found** (book resolution must run
+against the open transaction `tx`, not the connection pool `db`, since
+`store.Open` pins the pool to 1 connection) - fixed before it shipped this time,
+by writing the resolve-inside-the-verse-loop code with `tx` from the start.
+Final: 425,299 words across the 34 in-scope books; 9,699 out-of-scope rows
+(multi-recension + deuterocanon, by design); 45 malformed keys (exact match to
+the independently-verified full-corpus count). Gen.1.1 lemma sequence
+spot-checked verbatim against the file (ἐν, ἀρχή, ποιέω, ...); Esther 1:1's 18
+lettered addition-verse parts merged correctly in letter order.
 
 ---
 
@@ -627,8 +671,8 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T21
-T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (OSS)
+DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T13, T21
+T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (OSS, DONE)
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T4b (deterministic verse aligner): runs AFTER the LXX loaders exist (it aligns their
      lxx-* verse rows <-> canonical); shares its alignment core with T22
@@ -636,9 +680,9 @@ T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
 V2 after deps: T22 (word align, shares T4b core), T23, T24
 ```
 
-Recommended next executable order: **T13** (OSS LXX lemma words - check it for
-the same db-vs-tx connection-pool pattern that caused T12's self-deadlock), then
-**T4b** (the deterministic verse aligner, now that T9/T12 have given it lxx-*
-verse rows to align), then **T14** (integrity), then Phase 5 and 6.
+Recommended next executable order: **T4b** (the deterministic verse aligner -
+T9/T12/T13 have all now given it lxx-* verse rows to align), then **T14**
+(integrity - the complete-or-fail self-test over T10-T13's words rows), then
+Phase 5 and 6. All of Phase 3 (text/word import) is now DONE.
 
 Build the generic deterministic sequence aligner once (for T4b) and reuse it for T22.

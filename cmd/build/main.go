@@ -17,6 +17,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/crossrefs"
 	"github.com/jrainsberger/orthotomeo/lexicon"
 	"github.com/jrainsberger/orthotomeo/morph"
+	"github.com/jrainsberger/orthotomeo/osswords"
 	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/store"
 	"github.com/jrainsberger/orthotomeo/swetewords"
@@ -108,9 +109,13 @@ func run(out, root, reference string) error {
 	if err != nil {
 		return err
 	}
+	nOSS, nOSSSkip, nOSSMalformed, err := loadOSSWords(db, roots)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files), %d TAGNT words (%d skipped, %d compound), %d TAHOT words (%d skipped, %d untagged), %d Swete words (%d deuterocanon verses skipped) -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, nWords, nWordsSkip, nCompound, nHebWords, nHebSkip, nUntagged, nSwete, nSweteSkip, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files), %d TAGNT words (%d skipped, %d compound), %d TAHOT words (%d skipped, %d untagged), %d Swete words (%d deuterocanon verses skipped), %d OSS words (%d out-of-scope rows skipped, %d malformed keys) -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, nWords, nWordsSkip, nCompound, nHebWords, nHebSkip, nUntagged, nSwete, nSweteSkip, nOSS, nOSSSkip, nOSSMalformed, out)
 	return nil
 }
 
@@ -382,6 +387,37 @@ func loadSweteWords(db *sql.DB, roots []string) (inserted, skipped int, err erro
 	defer wf.Close()
 
 	return swetewords.Load(db, vf, wf)
+}
+
+// loadOSSWords loads every Open Scriptures LxxLemmas/<Book>.js file.
+// Multi-recension and deuterocanon/extra-biblical files are reported as
+// out-of-scope rows via osswords.Load's bookAlias allow-list, not an error
+// (see osswords.bookAlias doc for the full list and rationale).
+func loadOSSWords(db *sql.DB, roots []string) (inserted, skippedBook, malformed int, err error) {
+	src, err := sourceByCode("OSS-LXX-lemma")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	paths, err := corpus.Locate(src, roots...)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("locate OSS-LXX-lemma: %w", err)
+	}
+
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("open %s: %w", path, err)
+		}
+		n, skip, mal, err := osswords.Load(db, f)
+		f.Close()
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("%s: %w", path, err)
+		}
+		inserted += n
+		skippedBook += skip
+		malformed += mal
+	}
+	return inserted, skippedBook, malformed, nil
 }
 
 // loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).

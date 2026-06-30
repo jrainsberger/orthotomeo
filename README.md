@@ -31,10 +31,11 @@ The DB is a build artifact (gitignored); the corpus files are the source of trut
 
 Done: T1 (sources), T2 (books), T4a (verses spine, 31,102), T21 (cross-references, 344,794),
 T5 (lexicon, 22,717), T6 (morph codes, 2,565), T3 (corpus locator), T7 (KJV+ASV text, 62,204),
-T8 (WEB text, 31,095/31,102 - 7 documented textual-critical divergences).
-Next: **T9 (Brenton LXX)** - unblocked by the approved T4b design. The LXX is no
-longer forced onto the KJV spine: each edition gets its own verse rows
-(`verses.versification`), and canonical correspondence is a separate **deterministic**
-`verse_alignment` (sequence alignment over parsed data, no TVTMS rule engine, no
-hand-curation, no LLM - invariant #9). See PLAN.md's T4 "DECISION" block and the
-revised T9. Then T10/T11 (words), T12/T13 (LXX words), T4b (aligner), T14.
+T8 (WEB text, 31,095/31,102 - 7 documented textual-critical divergences),
+T9 (Brenton LXX, 22,690 verses / 920 chapter files, its own `versification='lxx-brenton'` -
+not forced onto the KJV spine; canonical correspondence is the separate deterministic
+T4b aligner, not a load-time mapping).
+Next: T10/T11 (TAGNT/TAHOT words - the complete-or-fail foundation), then T12/T13
+(Swete/OSS LXX words), then T4b (the deterministic verse aligner: sequence alignment
+over parsed data, no TVTMS rule engine, no hand-curation, no LLM - invariant #9), then
+T14. See PLAN.md's T4 "DECISION" block for the full per-edition-versification design.

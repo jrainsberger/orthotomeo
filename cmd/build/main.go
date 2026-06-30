@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/jrainsberger/orthotomeo/books"
+	"github.com/jrainsberger/orthotomeo/brentontext"
 	"github.com/jrainsberger/orthotomeo/corpus"
 	"github.com/jrainsberger/orthotomeo/crossrefs"
 	"github.com/jrainsberger/orthotomeo/lexicon"
@@ -88,9 +89,13 @@ func run(out, root, reference string) error {
 	if err != nil {
 		return err
 	}
+	nBrenton, nBrentonFiles, err := loadBrentonText(db, roots)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped) -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files) -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, out)
 	return nil
 }
 
@@ -229,6 +234,40 @@ func loadWebText(db *sql.DB, roots []string) (inserted, skipped, nBooks int, err
 		}
 	}
 	return inserted, skipped, nBooks, nil
+}
+
+// loadBrentonText loads every Brenton LXX chapter file. Index/TOC pages
+// (PSA000.htm, GEN.htm, index.htm), front matter, deuterocanon outside the
+// 66-book registry, and the explicitly-skipped combined-book EZR.htm are
+// reported as not loaded rather than an error (brentontext.skipBooks; see
+// docs/PLAN.md T9 for the open Ezra/Nehemiah book-identity question).
+func loadBrentonText(db *sql.DB, roots []string) (inserted, nFiles int, err error) {
+	src, err := sourceByCode("Brenton")
+	if err != nil {
+		return 0, 0, err
+	}
+	paths, err := corpus.Locate(src, roots...)
+	if err != nil {
+		return 0, 0, fmt.Errorf("locate Brenton: %w", err)
+	}
+
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, 0, fmt.Errorf("open %s: %w", path, err)
+		}
+		_, _, n, loaded, err := brentontext.Load(db, f, filepath.Base(path))
+		f.Close()
+		if err != nil {
+			return 0, 0, fmt.Errorf("%s: %w", path, err)
+		}
+		if !loaded {
+			continue
+		}
+		inserted += n
+		nFiles++
+	}
+	return inserted, nFiles, nil
 }
 
 // loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).

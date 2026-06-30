@@ -361,7 +361,7 @@ textual notes, not bugs. 31,095 of 31,102 canonical verses loaded across all 66
 books; zero markup leakage verified across every row; Gen.1.1/John.3.16/Psalm 3
 (superscription + poetry + Selah) spot-checked against the built DB.
 
-### T9 - verse_text: Brenton LXX (HTML)  `NEXT` (unblocked by the T4b decision)
+### T9 - verse_text: Brenton LXX (HTML)  `DONE`
 Parse `bible-text/LXX/eng-Brenton_html/*.htm`. Extract `<span class="verse" id="VN">`
 + following text; strip footnote `<a class="notemark">`/`<span class="popup">` and the
 bottom `.footnote` block.
@@ -387,6 +387,28 @@ Brenton verse is loaded as an lxx-brenton verse row (per-book counts match the a
 table's "LXX vrs" column - use those as expected totals); **zero skips**; every row
 carries the Brenton `source_id` and `versification='lxx-brenton'`. No canonical mapping
 is asserted here (that is T4b).
+**Notes (as built):** the audit table's "LXX vrs" counts (and TVTMS's own row counts)
+turned out to be inflated by something the audit didn't account for: **lettered
+verse doublets**. Brenton prints some passages as split sub-verses (e.g. 1Ki.2's
+"Miscellanies" insertion is labeled "35a"/"35b" in the rendered text) - and
+critically, the `id="VN"` HTML attribute on those spans is just a sequential
+anchor ID, NOT the printed verse number (`id="V36"` displays "35a", `id="V37"`
+displays "35b", then `id="V36"` is reused for the real verse 36). Using the id
+attribute as the verse number (the original plan) caused duplicate-key insert
+failures on first run. Fixed by parsing the verse number from the span's own
+displayed text instead, and concatenating same-numbered lettered parts into one
+row (no sub-verse addressing in this schema) - confirmed deterministic and
+mechanical, not a judgment call. This affects 68 of ~1,117 real chapter files
+(~6%), heavily concentrated in Esther's Greek additions (ESG: audit's raw-span
+count was 252, actual distinct-verse count is 164 - a difference entirely
+explained by lettered doublets, not data loss; spot-checked file by file).
+EZR.htm (the LXX's combined Ezra+Nehemiah) is skipped per the open question
+above, via a `skipBooks` set - not re-litigated, exactly as scoped. Final
+build: 22,690 Brenton verses across 920 chapter files, zero skips, zero markup
+leakage (checked across every row), zero duplicate (verse_id, source_id) pairs;
+Gen.1.1, the 1Ki.2 doublet merge, the DAG/ESG book aliasing, and Psalm 151
+(loaded with no canonical counterpart, as designed) all spot-checked against the
+built DB.
 
 ### T10 - words: TAGNT (Greek NT)  `BLOCKED` on T4, T5, T6
 **Goal:** the workhorse tagged text and the foundation of complete-or-fail.
@@ -547,9 +569,9 @@ T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
 V2 after deps: T22 (word align, shares T4b core), T23, T24
 ```
 
-Recommended next executable order: **T9** (Brenton LXX - now unblocked, per-edition
-load), then **T10, T11** (TAGNT/TAHOT words - the complete-or-fail foundation), then
-**T12, T13** (Swete/OSS LXX words), then **T4b** (the deterministic verse aligner, once
-LXX verse rows exist to align), then **T14** (integrity), then Phase 5 and 6.
+Recommended next executable order: **T10, T11** (TAGNT/TAHOT words - the
+complete-or-fail foundation), then **T12, T13** (Swete/OSS LXX words), then **T4b**
+(the deterministic verse aligner, now that T9 has given it lxx-brenton rows to
+align), then **T14** (integrity), then Phase 5 and 6.
 
 Build the generic deterministic sequence aligner once (for T4b) and reuse it for T22.

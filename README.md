@@ -42,9 +42,14 @@ T12 (Swete LXX, 476,937 words, its own `versification='lxx-swete'`, surface-only
 - no lemma/dstrong/morph, Swete carries none),
 T13 (OSS LXX lemma, 425,299 words across 34 in-scope books, its own
 `versification='lxx-oss'`, lemma-only - multi-recension and deuterocanon files
-intentionally unloaded, see PLAN.md).
-Phase 3 (text/word import) is now complete. Next: T4b (the deterministic verse
-aligner: sequence alignment over parsed data, no TVTMS rule engine, no
-hand-curation, no LLM - invariant #9), then T14 (the complete-or-fail integrity
-self-test over T10-T13). See PLAN.md's T4 "DECISION" block for the full
-per-edition-versification design.
+intentionally unloaded, see PLAN.md),
+T4b (deterministic verse aligner: chapter-level alignment by verse COUNT
+- `align.AlignWeighted` - then verse-level position/count fill - `align.FillGap`
+- never verse-number label matching; no TVTMS rule engine, no hand-curation, no
+LLM - invariant #9. One documented limitation: a within-chapter leading-title
+insertion's exact position is underdetermined by counts alone, reported as
+low-confidence rather than guessed; see PLAN.md's T4b "AS-BUILT" notes).
+Phase 3 (text/word import) and T4b are now complete. Next: T14 (the
+complete-or-fail integrity self-test over T10-T13's words and T4b's
+verse_alignment). See PLAN.md's T4 "DECISION"/"AS-BUILT" blocks for the full
+per-edition-versification and aligner design.

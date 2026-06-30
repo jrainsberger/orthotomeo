@@ -23,6 +23,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/swetewords"
 	"github.com/jrainsberger/orthotomeo/tagnt"
 	"github.com/jrainsberger/orthotomeo/tahot"
+	"github.com/jrainsberger/orthotomeo/versealign"
 	"github.com/jrainsberger/orthotomeo/verses"
 	"github.com/jrainsberger/orthotomeo/versetext"
 	"github.com/jrainsberger/orthotomeo/webtext"
@@ -116,6 +117,32 @@ func run(out, root, reference string) error {
 
 	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped), %d Brenton verses (%d chapter files), %d TAGNT words (%d skipped, %d compound), %d TAHOT words (%d skipped, %d untagged), %d Swete words (%d deuterocanon verses skipped), %d OSS words (%d out-of-scope rows skipped, %d malformed keys) -> %s\n",
 		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, nBrenton, nBrentonFiles, nWords, nWordsSkip, nCompound, nHebWords, nHebSkip, nUntagged, nSwete, nSweteSkip, nOSS, nOSSSkip, nOSSMalformed, out)
+
+	if err := alignAllEditions(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// alignAllEditions runs the deterministic verse aligner (T4b) for every LXX
+// edition loaded above, against the canonical spine. Each edition is
+// independent (its own versification tag, its own source_id).
+func alignAllEditions(db *sql.DB) error {
+	editions := []struct {
+		versification, sourceCode string
+	}{
+		{brentontext.Versification, "Brenton"},
+		{swetewords.Versification, "Swete"},
+		{osswords.Versification, "OSS-LXX-lemma"},
+	}
+	for _, e := range editions {
+		counts, err := versealign.Align(db, e.versification, e.sourceCode)
+		if err != nil {
+			return fmt.Errorf("align %s: %w", e.versification, err)
+		}
+		fmt.Printf("aligned %s: %d exact, %d renumber, %d merge, %d divide, %d canonical-only, %d edition-only\n",
+			e.versification, counts.Exact, counts.Renumber, counts.Merge, counts.Divide, counts.UnalignedCanonical, counts.UnalignedEdition)
+	}
 	return nil
 }
 

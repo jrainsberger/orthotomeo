@@ -119,7 +119,7 @@ ticket's literal `Locate(src, root string)` for the same reason. Full
 rebuild verified unchanged: 22,717 lexicon entries, 2,565 morph codes, same
 verse/xref counts as T5/T6.
 
-### T4 - verses spine + verse alignment  `T4a DONE` · T4b DECIDED (per-edition + deterministic aligner)
+### T4 - verses spine + verse alignment  `T4a DONE` · `T4b DONE`
 **Status:** T4a (verses spine) DONE - canonical = KJV/English, enumerated from
 KJV.json (31,102 verses / 1,189 chapters), `verses.BuildSpine` + scheme-aware
 `verses.Resolver` + `ErrUnknownVerse`. `name-en` aliases corrected to the KJV/ASV
@@ -278,6 +278,111 @@ compute directly what TVTMS's Tests were reconstructing without that data.*
   right renumber chain; Ps 151 and the Esther/Daniel additions produce edition verse
   rows with no alignment (assert they exist as verses, assert no alignment row); a
   known merge/divide produces a shared `group_id`.
+
+**T4b AS-BUILT (2026-06-30):** the spec above called for verse-LABEL-based sequence
+alignment, optionally cross-checked against TVTMS's simple rows. Implementing it
+surfaced that verse-label equality is **not safe as the primary signal** - confirmed
+wrong on real data in two distinct shapes before landing on the actual design below.
+Two runs at this are documented for the record (the second run is what shipped):
+
+1. **First attempt (verse-label LIS + gap-fill), found unsound.** Identical
+   `(chapter,verse)` labels were trusted as anchors, found via patience-diff-style
+   LIS. This is wrong whenever a chapter has been renumbered, split, or merged,
+   because both sides' verse numbering then restarts/recounts independently and
+   small numbers trivially coincide. Confirmed wrong twice: Brenton `lxx-brenton`
+   "10:1" label-matched canonical Psalms 10:1, but is actually Psalm 11:1's content
+   (the Hebrew Ps9+10 merge into Greek Ps9 shifts everything after by one chapter -
+   exactly the mechanism Justin named); and Joel's canonical 3:1 label-matched
+   edition 3:1, but edition's chapter 3 is actually the tail of canonical chapter 2
+   (Joel's chapters split differently) - canonical 3:1 is unrelated content. Both
+   were confidently mislabeled `exact`.
+2. **A "trust labels in this direction, not that one" patch, also found unsound.**
+   Reasoning: genuine omissions (edition same size or smaller) preserve surrounding
+   verse numbers; insertions (edition larger, eg a Psalm title counted as verse 1)
+   cascade-renumber everything after. This fixed Brenton Psalms 5/7 (the title
+   case) but NOT Exodus 7/8 (canonical 25/32 vs edition 29/28 - content genuinely
+   crosses the chapter boundary, but the chapter-level decision below still chose
+   to substitute 7<->7 and 8<->8 since that was cheaper, leaving a residual
+   within-chapter mismatch the directional rule didn't catch). Iterating
+   per-discovered-case like this is itself a form of hand-curation (tuning the
+   algorithm against specific verses read by eye) - flagged as such mid-session and
+   abandoned in favor of one clean, general rule with no case-by-case exceptions.
+
+**Shipped design - two levels, both content-free:**
+1. **Chapter level first** (`align.AlignWeighted`): treat each book's own chapters
+   as a sequence of verse-COUNT weights (not labels) and run a generalized
+   edit-distance DP - substitute / insert / delete / 2:1-merge / 1:2-divide, cost =
+   `|weight difference|` (0 for an exact size match). Chapter size is a far harder
+   signal to coincidentally collide on than raw verse labels. This finds the real
+   structure directly from parsed data with no lookup table: canonical Ps9(20)+
+   Ps10(18) merging into edition's Ps9(39) costs 1 (the title verse) vs cost 30 for
+   two independent substitutions; canonical chapter 2(32) dividing into edition
+   chapters 2(27)+3(5) costs 0 (an exact size match) - both verified against the
+   real corpus, matching the historically-documented Hebrew/LXX Psalm-numbering
+   pattern Justin described, with no need to encode it as a literal table.
+2. **Verse level, within each chapter-level correspondence - position/count only**
+   (`align.FillGap`), **never verse-number label matching, even within an
+   established chapter pair.** Equal counts pair 1:1 in order; unequal counts
+   produce a merge/divide with confidence `1/groupSize`; a chapter-level
+   insert/delete (eg Psalm 151) makes every verse in it a pure insertion/deletion -
+   no row. `exact` vs `renumber` is a post-hoc label comparison on an
+   ALREADY-DETERMINED pairing (informational), never the signal used to find the
+   pairing.
+- Schema (`relation`) narrowed from the original `{exact, renumber, merge, divide,
+  title, moved}` to `{exact, renumber, merge, divide}` - `title` and `moved`
+  require a signal (eg TVTMS's annotated Action types) this design doesn't have;
+  the column still permits them for a future enhancement.
+- **TVTMS is not read or consumed to derive the mapping at all** (a stronger
+  position than the original spec's "seed/cross-check from TVTMS's simple rows").
+  Once the chapter-size DP existed, TVTMS's corroboration role had nothing left to
+  add to the *derivation*; it is used only as an independent, read-only scoring
+  oracle post-hoc (see Validation below) - reading it to score agreement is not the
+  same as consuming it to build the mapping.
+- **Known, documented limitation (deferred, not fixed):** a within-chapter
+  insertion whose position can't be derived from counts alone (the leading
+  Psalm-title case) becomes a low-confidence (0.5) merge/divide bundling one verse
+  with its neighbor, rather than "added content, no row" - the rest of the chapter
+  still renumbers correctly. This is genuinely underdetermined by verse counts:
+  nothing in the counts says the extra verse is a leading title vs a trailing
+  addition. The 0.5 confidence reports this honestly; it is not a bug to chase
+  with more heuristics. **Future fix:** consume TVTMS's `Psalm title`/`Renumber
+  title` Action rows as a deterministic placement authority for this one pattern
+  specifically (its Tests are booleans over verse counts already parsed - reading
+  them as data for this narrow purpose, not building a general rule engine).
+- **Validation (2026-06-30 real build, `lxx-*` vs canonical):**
+
+  | Edition | Exact | Renumber | Merge | Divide | Canonical-only | Edition-only |
+  |---|---|---|---|---|---|---|
+  | lxx-brenton | 16,314 | 5,453 | 395 | 246 | 53 | 36 |
+  | lxx-swete | 18,033 | 4,474 | 194 | 226 | 24 | 40 |
+  | lxx-oss | 14,611 | 5,202 | 365 | 221 | 53 | 7 |
+
+  Deterministic: two builds from identical input produce byte-identical
+  `verse_alignment` rows (asserted in `versealign_test.go`'s
+  `TestAlignIsDeterministic`, and confirmed by re-running the full build).
+  **Independent oracle cross-check:** scored (not consumed) against TVTMS's own
+  `SourceType=Greek` `Keep verse`/`Renumber verse` simple rows (a scratch,
+  uncommitted script - reading TVTMS to score, not to build) - 269 of 521 rows
+  were comparable (both refs in our loaded 66-book scope), with 96 agreeing
+  (35.7% overall). This split sharply by book, which is itself informative:
+  **Psalms agreed 83/87 (95.4%)** - strong independent confirmation on the book
+  this design was hardest-won for. Several other books (Leviticus, Deuteronomy,
+  Daniel, most of Exodus) showed near-zero agreement against this baseline -
+  consistent with, not contradicting, the documented reason TVTMS was never
+  consumed as a rule engine: TVTMS records SEVERAL distinct Greek sub-traditions
+  per book (`Greek`, `Greek2`, `GreekUndivided`, `GreekIntegrated`,
+  `GrkTitleSeparate`, ...), and this comparison scored against only the single
+  `Greek` SourceType as a baseline; a book where Brenton follows a different
+  TVTMS sub-tradition will show low agreement against the wrong baseline without
+  our alignment being wrong. Reported as flagged data for future investigation,
+  not chased into a per-book correction.
+- Tests: `align/align_test.go` (`AlignWeighted`, `Anchors`, `FillGap`,
+  `ProportionalAllocate` - generic, structural, synthetic) and
+  `versealign/versealign_test.go` (boundary shift, insertion/deletion, merge/divide
+  group_id sharing, the proportional chapter split, the leading-title-insertion
+  regression case, determinism) - all synthetic fixtures shaped like the real
+  patterns found, asserting aggregate counts/relations/confidence, never
+  per-verse-content checks (that would itself be a step toward curation).
 
 ---
 
@@ -671,18 +776,15 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T13, T21
+DONE: T1 -> T2 -> T3, T4a, T4b, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T13, T21
 T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (OSS, DONE)
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
-T4b (deterministic verse aligner): runs AFTER the LXX loaders exist (it aligns their
-     lxx-* verse rows <-> canonical); shares its alignment core with T22
+T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
+     AlignWeighted/FillGap core is reusable for T22)
 T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
-V2 after deps: T22 (word align, shares T4b core), T23, T24
+V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T4b** (the deterministic verse aligner -
-T9/T12/T13 have all now given it lxx-* verse rows to align), then **T14**
-(integrity - the complete-or-fail self-test over T10-T13's words rows), then
-Phase 5 and 6. All of Phase 3 (text/word import) is now DONE.
-
-Build the generic deterministic sequence aligner once (for T4b) and reuse it for T22.
+Recommended next executable order: **T14** (integrity - the complete-or-fail
+self-test over T10-T13's words rows and T4b's verse_alignment), then Phase 5 and
+6. All of Phase 3 (text/word import) and T4b are now DONE.

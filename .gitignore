@@ -1,0 +1,9 @@
+# Derived build artifact — regenerate with: go run ./cmd/build
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+
+# Go
+/orthotomeo
+*.test
+*.out

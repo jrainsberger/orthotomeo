@@ -1,0 +1,154 @@
+<svg viewBox="0 0 1280 700" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,system-ui,sans-serif">
+<title>orthotomeo — scripture corpus data model v1 (ERD)</title>
+<desc>ERD: provenance/reference tables (sources, versification_map, book_names, lexicon, morph_codes), a canonical verses spine, per-source verse_text and words tables, and deferred tables (cross_references, word_alignment).</desc>
+<style>
+  .bg{fill:#ffffff;}
+  .tbl{fill:#f6f8fa;stroke:#8c959f;stroke-width:1.5;}
+  .tbld{fill:#fbfcfd;stroke:#d0d7de;stroke-width:1.5;stroke-dasharray:5 4;}
+  .hdr{fill:#eaeef2;}
+  .tname{font:600 13px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#1f2328;}
+  .tag{font:9px -apple-system,system-ui,sans-serif;fill:#6e7781;}
+  .col{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#424a53;}
+  .pkm{font:11px ui-monospace,monospace;fill:#0969da;font-weight:700;}
+  .fkm{font:11px ui-monospace,monospace;fill:#6e7781;}
+  .zone{font:600 10px -apple-system,system-ui,sans-serif;fill:#6e7781;letter-spacing:.1em;}
+  .rel{stroke:#6e7781;stroke-width:1.4;fill:none;}
+  .relS{stroke:#0969da;stroke-width:1.3;fill:none;opacity:.75;}
+  .reld{stroke:#afb8c1;stroke-width:1.2;stroke-dasharray:4 3;fill:none;}
+  .fklbl{font:8.5px ui-monospace,monospace;fill:#8c959f;}
+  .cap{font:600 13px -apple-system,system-ui,sans-serif;fill:#1f2328;}
+  .ftr{font:10px -apple-system,system-ui,sans-serif;fill:#8c959f;}
+</style>
+<rect class="bg" x="0" y="0" width="1280" height="700"/>
+
+<text x="30" y="30" class="cap">orthotomeo — scripture corpus data model (v1)</text>
+
+<text x="30" y="58" class="zone">PROVENANCE &amp; REFERENCE</text>
+<text x="340" y="58" class="zone">CANON SPINE</text>
+<text x="660" y="58" class="zone">TEXT — per source</text>
+<text x="990" y="58" class="zone">LEXICON / MORPH</text>
+
+<!-- relationships -->
+<path class="rel" d="M460,214 L460,236"/><text x="466" y="230" class="fklbl">book_id</text>
+<path class="rel" d="M340,300 L280,344"/><text x="286" y="330" class="fklbl">verse_id</text>
+<path class="rel" d="M580,270 L660,150"/><text x="590" y="200" class="fklbl">verse_id</text>
+<path class="rel" d="M580,320 L660,378"/><text x="590" y="356" class="fklbl">verse_id</text>
+<path class="reld" d="M430,344 L430,372"/><text x="436" y="364" class="fklbl">from/to_verse</text>
+<path class="rel" d="M340,180 L280,470"/><text x="286" y="455" class="fklbl">book_id</text>
+<path class="rel" d="M990,118 L910,222"/><text x="916" y="212" class="fklbl">strongs</text>
+<path class="rel" d="M990,300 L910,240"/><text x="916" y="258" class="fklbl">morph_code</text>
+<path class="reld" d="M660,255 L580,520"/><text x="588" y="500" class="fklbl">word_a / word_b</text>
+<path class="relS" d="M70,270 L70,300"/>
+<path class="relS" d="M45,270 C20,360 20,400 45,470"/>
+<path class="relS" d="M280,100 C470,40 600,40 660,150"/><text x="470" y="56" class="fklbl">source_id</text>
+<path class="relS" d="M280,92 C540,26 980,52 912,372"/><text x="980" y="300" class="fklbl">source_id</text>
+
+<!-- sources -->
+<rect class="tbl" x="30" y="70" width="250" height="200" rx="6"/>
+<rect class="hdr" x="30" y="70" width="250" height="28" rx="6"/><rect class="hdr" x="30" y="88" width="250" height="10"/>
+<text x="42" y="89" class="tname">sources</text><text x="272" y="89" text-anchor="end" class="tag">provenance</text>
+<text x="42" y="116" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="42" y="134" class="col">code</text><text x="42" y="152" class="col">language</text>
+<text x="42" y="170" class="col">type</text><text x="42" y="188" class="col">license</text>
+<text x="42" y="206" class="col">attribution</text><text x="42" y="224" class="col">source_file</text>
+<text x="42" y="242" class="col">shippable</text><text x="42" y="260" class="col">fetch_url</text>
+
+<!-- versification_map -->
+<rect class="tbl" x="30" y="300" width="250" height="98" rx="6"/>
+<rect class="hdr" x="30" y="300" width="250" height="28" rx="6"/><rect class="hdr" x="30" y="318" width="250" height="10"/>
+<text x="42" y="319" class="tname">versification_map</text><text x="272" y="319" text-anchor="end" class="tag">TVTMS</text>
+<text x="42" y="346" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="42" y="364" class="col"><tspan class="fkm">◇</tspan> source_id</text>
+<text x="42" y="382" class="col">native_book/ch/v</text>
+<text x="42" y="400" class="col"><tspan class="fkm">◇</tspan> verse_id</text>
+
+<!-- book_names -->
+<rect class="tbl" x="30" y="424" width="250" height="98" rx="6"/>
+<rect class="hdr" x="30" y="424" width="250" height="28" rx="6"/><rect class="hdr" x="30" y="442" width="250" height="10"/>
+<text x="42" y="443" class="tname">book_names</text><text x="272" y="443" text-anchor="end" class="tag">per-edition aliases</text>
+<text x="42" y="470" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="42" y="488" class="col"><tspan class="fkm">◇</tspan> book_id</text>
+<text x="42" y="506" class="col"><tspan class="fkm">◇</tspan> source_id</text>
+<text x="42" y="524" class="col">native_code</text>
+
+<!-- books -->
+<rect class="tbl" x="340" y="70" width="240" height="144" rx="6"/>
+<rect class="hdr" x="340" y="70" width="240" height="28" rx="6"/><rect class="hdr" x="340" y="88" width="240" height="10"/>
+<text x="352" y="89" class="tname">books</text><text x="572" y="89" text-anchor="end" class="tag">canon registry</text>
+<text x="352" y="116" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="352" y="134" class="col">code</text><text x="352" y="152" class="col">full_name</text>
+<text x="352" y="170" class="col">section</text><text x="352" y="188" class="col">canon</text>
+<text x="352" y="206" class="col">sort_order</text>
+
+<!-- verses spine -->
+<rect class="tbl" x="340" y="236" width="240" height="100" rx="6" stroke="#0969da" stroke-width="2"/>
+<rect class="hdr" x="340" y="236" width="240" height="28" rx="6"/><rect class="hdr" x="340" y="254" width="240" height="10"/>
+<text x="352" y="255" class="tname">verses</text><text x="572" y="255" text-anchor="end" class="tag">canonical spine</text>
+<text x="352" y="282" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="352" y="300" class="col"><tspan class="fkm">◇</tspan> book_id</text>
+<text x="352" y="318" class="col">chapter</text><text x="352" y="336" class="col">verse</text>
+
+<!-- cross_references -->
+<rect class="tbld" x="340" y="372" width="240" height="90" rx="6"/>
+<rect class="hdr" x="340" y="372" width="240" height="28" rx="6" opacity="0.5"/><rect class="hdr" x="340" y="390" width="240" height="10" opacity="0.5"/>
+<text x="352" y="391" class="tname">cross_references</text><text x="572" y="391" text-anchor="end" class="tag">v2</text>
+<text x="352" y="418" class="col"><tspan class="fkm">◇</tspan> from_verse</text>
+<text x="352" y="436" class="col"><tspan class="fkm">◇</tspan> to_verse</text>
+<text x="352" y="454" class="col">kind</text>
+
+<!-- word_alignment -->
+<rect class="tbld" x="340" y="486" width="240" height="90" rx="6"/>
+<rect class="hdr" x="340" y="486" width="240" height="28" rx="6" opacity="0.5"/><rect class="hdr" x="340" y="504" width="240" height="10" opacity="0.5"/>
+<text x="352" y="505" class="tname">word_alignment</text><text x="572" y="505" text-anchor="end" class="tag">v2 · the aligner</text>
+<text x="352" y="532" class="col"><tspan class="fkm">◇</tspan> word_a</text>
+<text x="352" y="550" class="col"><tspan class="fkm">◇</tspan> word_b</text>
+<text x="352" y="568" class="col">confidence</text>
+
+<!-- words -->
+<rect class="tbl" x="660" y="70" width="250" height="216" rx="6"/>
+<rect class="hdr" x="660" y="70" width="250" height="28" rx="6"/><rect class="hdr" x="660" y="88" width="250" height="10"/>
+<text x="672" y="89" class="tname">words</text><text x="902" y="89" text-anchor="end" class="tag">TAGNT·TAHOT·Swete·OSS</text>
+<text x="672" y="116" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="672" y="134" class="col"><tspan class="fkm">◇</tspan> verse_id</text>
+<text x="672" y="152" class="col"><tspan class="fkm">◇</tspan> source_id</text>
+<text x="672" y="170" class="col">word_no</text><text x="672" y="188" class="col">surface</text>
+<text x="672" y="206" class="col">lemma</text>
+<text x="672" y="224" class="col"><tspan class="fkm">◇</tspan> dstrong</text>
+<text x="672" y="242" class="col"><tspan class="fkm">◇</tspan> morph_code</text>
+<text x="672" y="260" class="col">attestation (N/K/O)</text>
+<text x="672" y="278" class="col">source_locator</text>
+
+<!-- verse_text -->
+<rect class="tbl" x="660" y="308" width="250" height="118" rx="6"/>
+<rect class="hdr" x="660" y="308" width="250" height="28" rx="6"/><rect class="hdr" x="660" y="326" width="250" height="10"/>
+<text x="672" y="327" class="tname">verse_text</text><text x="902" y="327" text-anchor="end" class="tag">KJV·ASV·WEB·Brenton</text>
+<text x="672" y="354" class="col"><tspan class="pkm">●</tspan> id</text>
+<text x="672" y="372" class="col"><tspan class="fkm">◇</tspan> verse_id</text>
+<text x="672" y="390" class="col"><tspan class="fkm">◇</tspan> source_id</text>
+<text x="672" y="408" class="col">native_ref</text><text x="672" y="426" class="col">text</text>
+
+<!-- lexicon -->
+<rect class="tbl" x="990" y="70" width="250" height="180" rx="6"/>
+<rect class="hdr" x="990" y="70" width="250" height="28" rx="6"/><rect class="hdr" x="990" y="88" width="250" height="10"/>
+<text x="1002" y="89" class="tname">lexicon</text><text x="1232" y="89" text-anchor="end" class="tag">TBESG / TBESH (1 table)</text>
+<text x="1002" y="116" class="col"><tspan class="pkm">●</tspan> dstrong</text>
+<text x="1002" y="134" class="col">estrong</text><text x="1002" y="152" class="col"><tspan class="fkm">◇</tspan> ustrong</text>
+<text x="1002" y="170" class="col">language</text><text x="1002" y="188" class="col">lemma</text>
+<text x="1002" y="206" class="col">translit · gloss</text>
+<text x="1002" y="224" class="col">definition</text>
+<text x="1002" y="242" class="col">def_license</text>
+
+<!-- morph_codes -->
+<rect class="tbl" x="990" y="276" width="250" height="90" rx="6"/>
+<rect class="hdr" x="990" y="276" width="250" height="28" rx="6"/><rect class="hdr" x="990" y="294" width="250" height="10"/>
+<text x="1002" y="295" class="tname">morph_codes</text><text x="1232" y="295" text-anchor="end" class="tag">TEGMC / TEHMC</text>
+<text x="1002" y="322" class="col"><tspan class="pkm">●</tspan> code</text>
+<text x="1002" y="340" class="col">language</text><text x="1002" y="358" class="col">description</text>
+
+<!-- legend -->
+<text x="990" y="408" class="col"><tspan class="pkm">●</tspan> PK&#160;&#160;&#160;<tspan class="fkm">◇</tspan> FK</text>
+<path class="relS" d="M990,426 L1030,426"/><text x="1038" y="430" class="col">sources → (source_id)</text>
+<path class="reld" d="M990,446 L1030,446"/><text x="1038" y="450" class="col">deferred (v2)</text>
+
+<text x="30" y="688" class="ftr">v1 · words = wide-nullable, parallel per-source streams (Swete↔OSS not merged) · lexicon dstrong join · canonical verses + TVTMS map</text>
+</svg>

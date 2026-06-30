@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/jrainsberger/orthotomeo/books"
+	"github.com/jrainsberger/orthotomeo/corpus"
 	"github.com/jrainsberger/orthotomeo/crossrefs"
 	"github.com/jrainsberger/orthotomeo/lexicon"
 	"github.com/jrainsberger/orthotomeo/morph"
@@ -22,18 +23,20 @@ import (
 
 func main() {
 	out := flag.String("out", "data/orthotomeo.db", "output SQLite path")
-	// TODO(justin, 2026-06): replace with the full corpus locator (T3); for now
-	// the KJV.json and cross-reference loads resolve under this single root.
-	corpus := flag.String("corpus", `D:/Claude/Bible`, "corpus root")
-	stepbible := flag.String("stepbible", `D:/Reference/STEPBible-Data`, "STEPBible-Data root")
+	// The corpus is split across two parents on this machine (docs/PLAN.md
+	// "Corpus locations"): --corpus holds bible-text/ + cross_references.txt,
+	// --reference holds STEPBible-Data/ + LXX-Swete-1930/. corpus.Locate tries
+	// each root in turn, so either tree may also be symlinked under the other.
+	root := flag.String("corpus", `D:/Claude/Bible`, "corpus root (bible-text, cross_references.txt)")
+	reference := flag.String("reference", `D:/Reference`, "reference root (STEPBible-Data, LXX-Swete-1930)")
 	flag.Parse()
 
-	if err := run(*out, *corpus, *stepbible); err != nil {
+	if err := run(*out, *root, *reference); err != nil {
 		log.Fatalf("build: %v", err)
 	}
 }
 
-func run(out, corpus, stepbible string) error {
+func run(out, root, reference string) error {
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
@@ -57,19 +60,21 @@ func run(out, corpus, stepbible string) error {
 		return err
 	}
 
-	nVerse, err := loadSpine(db, filepath.Join(corpus, "bible-text", "KJV", "KJV.json"))
+	roots := []string{root, reference}
+
+	nVerse, err := loadSpine(db, roots)
 	if err != nil {
 		return err
 	}
-	nXref, nSkip, err := loadXrefs(db, filepath.Join(corpus, "cross_references.txt"))
+	nXref, nSkip, err := loadXrefs(db, roots)
 	if err != nil {
 		return err
 	}
-	nLex, err := loadLexicon(db, stepbible)
+	nLex, err := loadLexicon(db, roots)
 	if err != nil {
 		return err
 	}
-	nMorph, err := loadMorphCodes(db, stepbible)
+	nMorph, err := loadMorphCodes(db, roots)
 	if err != nil {
 		return err
 	}
@@ -79,28 +84,60 @@ func run(out, corpus, stepbible string) error {
 	return nil
 }
 
-func loadSpine(db *sql.DB, path string) (int, error) {
+// sourceByCode looks up the sources.json row by code; build wiring never
+// hard-codes a corpus path itself, only the source code it wants to load.
+func sourceByCode(code string) (sources.Source, error) {
+	reg, err := sources.Registry()
+	if err != nil {
+		return sources.Source{}, err
+	}
+	for _, s := range reg {
+		if s.Code == code {
+			return s, nil
+		}
+	}
+	return sources.Source{}, fmt.Errorf("source %q not in registry", code)
+}
+
+// openSource locates and opens the single file for a sources.json code via
+// corpus.LocateOne, the only path-aware step in each loader below.
+func openSource(code string, roots []string) (*os.File, error) {
+	src, err := sourceByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	path, err := corpus.LocateOne(src, roots...)
+	if err != nil {
+		return nil, fmt.Errorf("locate %s: %w", code, err)
+	}
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, fmt.Errorf("open KJV.json: %w", err)
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	return f, nil
+}
+
+func loadSpine(db *sql.DB, roots []string) (int, error) {
+	f, err := openSource("KJV", roots)
+	if err != nil {
+		return 0, err
 	}
 	defer f.Close()
 	return verses.BuildSpine(db, f)
 }
 
-func loadXrefs(db *sql.DB, path string) (inserted, skipped int, err error) {
-	f, err := os.Open(path)
+func loadXrefs(db *sql.DB, roots []string) (inserted, skipped int, err error) {
+	f, err := openSource("OpenBible-xref", roots)
 	if err != nil {
-		return 0, 0, fmt.Errorf("open cross_references.txt: %w", err)
+		return 0, 0, err
 	}
 	defer f.Close()
 	return crossrefs.Load(db, f)
 }
 
-// loadLexicon loads TBESG (Greek) and TBESH (Hebrew), each glob-matched under
-// stepbible/Lexicons since the filenames carry a long descriptive suffix.
-func loadLexicon(db *sql.DB, stepbible string) (int, error) {
-	greek, err := openGlob(stepbible, "Lexicons", "TBESG*.txt")
+// loadLexicon loads TBESG (Greek) and TBESH (Hebrew).
+func loadLexicon(db *sql.DB, roots []string) (int, error) {
+	greek, err := openSource("TBESG", roots)
 	if err != nil {
 		return 0, err
 	}
@@ -110,7 +147,7 @@ func loadLexicon(db *sql.DB, stepbible string) (int, error) {
 		return 0, err
 	}
 
-	hebrew, err := openGlob(stepbible, "Lexicons", "TBESH*.txt")
+	hebrew, err := openSource("TBESH", roots)
 	if err != nil {
 		return 0, err
 	}
@@ -123,10 +160,9 @@ func loadLexicon(db *sql.DB, stepbible string) (int, error) {
 	return nGreek + nHebrew, nil
 }
 
-// loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew), each glob-matched
-// under stepbible/Morphology codes.
-func loadMorphCodes(db *sql.DB, stepbible string) (int, error) {
-	greek, err := openGlob(stepbible, "Morphology codes", "TEGMC*.txt")
+// loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).
+func loadMorphCodes(db *sql.DB, roots []string) (int, error) {
+	greek, err := openSource("TEGMC", roots)
 	if err != nil {
 		return 0, err
 	}
@@ -136,7 +172,7 @@ func loadMorphCodes(db *sql.DB, stepbible string) (int, error) {
 		return 0, err
 	}
 
-	hebrew, err := openGlob(stepbible, "Morphology codes", "TEHMC*.txt")
+	hebrew, err := openSource("TEHMC", roots)
 	if err != nil {
 		return 0, err
 	}
@@ -147,22 +183,4 @@ func loadMorphCodes(db *sql.DB, stepbible string) (int, error) {
 	}
 
 	return nGreek + nHebrew, nil
-}
-
-// openGlob opens the single file matching glob under stepbible/subdir. The
-// STEPBible filenames carry a long descriptive suffix, so loaders match by
-// glob rather than a literal name.
-func openGlob(stepbible, subdir, glob string) (*os.File, error) {
-	matches, err := filepath.Glob(filepath.Join(stepbible, subdir, glob))
-	if err != nil {
-		return nil, fmt.Errorf("glob %s: %w", glob, err)
-	}
-	if len(matches) != 1 {
-		return nil, fmt.Errorf("glob %s: want 1 match, got %d", glob, len(matches))
-	}
-	f, err := os.Open(matches[0])
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", matches[0], err)
-	}
-	return f, nil
 }

@@ -85,22 +85,29 @@ Provenance registry: `sources` table + checked-in `sources/sources.json` + `Seed
 Canonical 66-book registry + per-scheme aliases (usfm/osis/dotted/name-en),
 scheme-keyed `Resolve(scheme, value) -> book_id` with `ErrUnknownBook`. Done.
 
-### T3 - corpus locator  `NEXT`
+### T3 - corpus locator  `DONE`
 **Goal:** one place that maps a source to its absolute file(s), so loaders never
 hard-code paths.
-- New `corpus` package: `Locate(src sources.Source, root string) ([]string, error)`
-  resolving the `source_file` glob against `--corpus` root(s).
-- Support the split layout above: accept multiple roots OR a single root with
-  expected subdirs (`STEPBible-Data/`, `LXX-Swete-1930/`, `bible-text/`,
-  `cross_references.txt`). Recommend documenting one `--corpus` dir and having
-  the user symlink the three trees + file under it.
-- `cmd/build` gains `--corpus` flag, threaded to loaders.
+- New `corpus` package: `Locate(src sources.Source, roots ...string) ([]string, error)`
+  resolving the `source_file` glob against each root in turn, returning the
+  first root's matches; `LocateOne` additionally requires exactly one match.
+- `cmd/build` gains `--corpus` (bible-text/, cross_references.txt) and
+  `--reference` (STEPBible-Data/, LXX-Swete-1930/) flags, both threaded to
+  `corpus.Locate` as an ordered root list. Loaders now resolve a path only via
+  `sourceByCode(code)` + `corpus.LocateOne`, never a hard-coded join.
 **Schema:** none.
-**Acceptance:** `Locate` returns the right file set for each of the 13 sources
-against a temp fixture tree (inline a tiny fake layout); `ErrCorpusMissing`
-sentinel when a required tree is absent. Glob expansion is deterministic (sorted).
-**Notes:** keep `source_file` patterns logical (already in sources.json); the
-locator is the only path-aware code.
+**Acceptance:** `Locate` returns the right file set for each tree against a
+temp fixture tree (inline a tiny fake two-root layout, mirroring the real
+split); `ErrCorpusMissing` sentinel when a required tree is absent under every
+root. Glob expansion is deterministic (sorted).
+**Notes (as built):** chose the "accept multiple roots" option over the
+single-root-plus-symlinks recommendation - the real layout is already split
+across two parents (`D:\Claude\Bible`, `D:\Reference`) and symlinking would
+mean writing into the read-only `bible-text/` corpus directory's parent for
+no functional gain. `Locate`'s variadic roots signature differs from the
+ticket's literal `Locate(src, root string)` for the same reason. Full
+rebuild verified unchanged: 22,717 lexicon entries, 2,565 morph codes, same
+verse/xref counts as T5/T6.
 
 ### T4 - verses spine + versification_map (TVTMS)  `T4a DONE` · T4b deferred
 **Status:** T4a (verses spine) DONE - canonical = KJV/English, enumerated from

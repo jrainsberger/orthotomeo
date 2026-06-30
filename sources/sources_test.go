@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jrainsberger/orthotomeo/internal/sources"
-	"github.com/jrainsberger/orthotomeo/internal/store"
+	"github.com/jrainsberger/orthotomeo/sources"
+	"github.com/jrainsberger/orthotomeo/store"
 )
 
 // newDB opens a throwaway file-backed database in the test's temp dir and

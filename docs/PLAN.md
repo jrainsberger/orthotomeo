@@ -151,12 +151,17 @@ has a `language` and a `def_license`; `ustrong` populated.
 **Notes:** strip the long header (data starts well below). `uStrong` enables the
 deterministic synonym layer later - do not collapse it.
 
-### T6 - morph_codes (TEGMC + TEHMC)  `NEXT` after T5
+### T6 - morph_codes (TEGMC + TEHMC)  `DONE`
 **Goal:** human-readable expansions of morphology codes.
 **Scope:** `morph_codes` table `(code PK, language, description)`; parse
 `STEPBible-Data/Morphology codes/TEGMC*.txt` and `TEHMC*.txt`.
 **Acceptance:** counts match; `Expand(code)` returns the description for a known
 Greek (`V-IAI-3S`) and Hebrew (`Ncfsa`) code.
+**Notes (as built):** the "FULL MORPHOLOGY CODES" table is the section actually
+used by tagged texts (the file also has an earlier "BRIEF LEXICAL" table for
+lexicon entries, skipped). Bare `Ncfsa` does not occur in TEHMC; codes there
+carry a language prefix (`HNcfsa`, `ANcfsa`) - the acceptance example was
+illustrative, not literal. 1,644 Greek + 921 Hebrew = 2,565 codes loaded.
 
 ---
 

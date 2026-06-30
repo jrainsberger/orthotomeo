@@ -14,6 +14,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/books"
 	"github.com/jrainsberger/orthotomeo/crossrefs"
 	"github.com/jrainsberger/orthotomeo/lexicon"
+	"github.com/jrainsberger/orthotomeo/morph"
 	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/store"
 	"github.com/jrainsberger/orthotomeo/verses"
@@ -68,9 +69,13 @@ func run(out, corpus, stepbible string) error {
 	if err != nil {
 		return err
 	}
+	nMorph, err := loadMorphCodes(db, stepbible)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, out)
 	return nil
 }
 
@@ -95,29 +100,69 @@ func loadXrefs(db *sql.DB, path string) (inserted, skipped int, err error) {
 // loadLexicon loads TBESG (Greek) and TBESH (Hebrew), each glob-matched under
 // stepbible/Lexicons since the filenames carry a long descriptive suffix.
 func loadLexicon(db *sql.DB, stepbible string) (int, error) {
-	greek, err := loadLexiconFile(db, stepbible, "TBESG*.txt", "grc", "Abbott-Smith PD")
+	greek, err := openGlob(stepbible, "Lexicons", "TBESG*.txt")
 	if err != nil {
 		return 0, err
 	}
-	hebrew, err := loadLexiconFile(db, stepbible, "TBESH*.txt", "he", "BDB/Online Bible - permission")
+	defer greek.Close()
+	nGreek, err := lexicon.Load(db, greek, "grc", "Abbott-Smith PD")
 	if err != nil {
 		return 0, err
 	}
-	return greek + hebrew, nil
+
+	hebrew, err := openGlob(stepbible, "Lexicons", "TBESH*.txt")
+	if err != nil {
+		return 0, err
+	}
+	defer hebrew.Close()
+	nHebrew, err := lexicon.Load(db, hebrew, "he", "BDB/Online Bible - permission")
+	if err != nil {
+		return 0, err
+	}
+
+	return nGreek + nHebrew, nil
 }
 
-func loadLexiconFile(db *sql.DB, stepbible, glob, language, defLicense string) (int, error) {
-	matches, err := filepath.Glob(filepath.Join(stepbible, "Lexicons", glob))
+// loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew), each glob-matched
+// under stepbible/Morphology codes.
+func loadMorphCodes(db *sql.DB, stepbible string) (int, error) {
+	greek, err := openGlob(stepbible, "Morphology codes", "TEGMC*.txt")
 	if err != nil {
-		return 0, fmt.Errorf("glob %s: %w", glob, err)
+		return 0, err
+	}
+	defer greek.Close()
+	nGreek, err := morph.Load(db, greek, "grc")
+	if err != nil {
+		return 0, err
+	}
+
+	hebrew, err := openGlob(stepbible, "Morphology codes", "TEHMC*.txt")
+	if err != nil {
+		return 0, err
+	}
+	defer hebrew.Close()
+	nHebrew, err := morph.Load(db, hebrew, "he")
+	if err != nil {
+		return 0, err
+	}
+
+	return nGreek + nHebrew, nil
+}
+
+// openGlob opens the single file matching glob under stepbible/subdir. The
+// STEPBible filenames carry a long descriptive suffix, so loaders match by
+// glob rather than a literal name.
+func openGlob(stepbible, subdir, glob string) (*os.File, error) {
+	matches, err := filepath.Glob(filepath.Join(stepbible, subdir, glob))
+	if err != nil {
+		return nil, fmt.Errorf("glob %s: %w", glob, err)
 	}
 	if len(matches) != 1 {
-		return 0, fmt.Errorf("glob %s: want 1 match, got %d", glob, len(matches))
+		return nil, fmt.Errorf("glob %s: want 1 match, got %d", glob, len(matches))
 	}
 	f, err := os.Open(matches[0])
 	if err != nil {
-		return 0, fmt.Errorf("open %s: %w", matches[0], err)
+		return nil, fmt.Errorf("open %s: %w", matches[0], err)
 	}
-	defer f.Close()
-	return lexicon.Load(db, f, language, defLicense)
+	return f, nil
 }

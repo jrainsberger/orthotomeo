@@ -95,3 +95,12 @@ CREATE TABLE IF NOT EXISTS lexicon (
     definition  TEXT NOT NULL,
     def_license TEXT NOT NULL
 );
+
+-- Ticket 6: human-readable expansions of the morphology codes used in the
+-- tagged texts (words.morph_code), from TEGMC (Greek) + TEHMC (Hebrew).
+
+CREATE TABLE IF NOT EXISTS morph_codes (
+    code        TEXT PRIMARY KEY,
+    language    TEXT NOT NULL,            -- grc | he
+    description TEXT NOT NULL
+);

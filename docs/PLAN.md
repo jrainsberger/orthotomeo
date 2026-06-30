@@ -42,6 +42,16 @@ Governing design doc (Phase 4+): `D:\Claude\Bible\Teaching\tools\concordance-ret
    `t.Fatalf` on setup / `t.Errorf` on independent assertions. Inline test data;
    never read a corpus file from a unit test (load-path tests may, scoped small).
 8. **No em-dashes in docs** (hyphens only). House output style.
+9. **Imports are deterministic and LLM-free.** Every import is a pure, re-runnable
+   function of the corpus files (plus CC-BY seed tables) - same inputs, identical
+   DB every run. No LLM in the build path, and **no hand-curated content**. If a
+   mapping cannot be derived mechanically from the data, it is surfaced as a typed
+   relation or a loud, counted skip - never authored by hand and never inferred by
+   a model. (This invariant is the reason the T4b verse-alignment design below
+   exists: a prior session, told "no hand-curation," over-reached into building a
+   TVTMS conditional-rule *engine*. The correct reading is the opposite - derive
+   the mapping deterministically from data we already parse, so neither curation
+   nor an inference engine is needed.)
 
 ## Definition of done (every ticket)
 
@@ -109,7 +119,7 @@ ticket's literal `Locate(src, root string)` for the same reason. Full
 rebuild verified unchanged: 22,717 lexicon entries, 2,565 morph codes, same
 verse/xref counts as T5/T6.
 
-### T4 - verses spine + versification_map (TVTMS)  `T4a DONE` · T4b deferred
+### T4 - verses spine + verse alignment  `T4a DONE` · T4b DECIDED (per-edition + deterministic aligner)
 **Status:** T4a (verses spine) DONE - canonical = KJV/English, enumerated from
 KJV.json (31,102 verses / 1,189 chapters), `verses.BuildSpine` + scheme-aware
 `verses.Resolver` + `ErrUnknownVerse`. `name-en` aliases corrected to the KJV/ASV
@@ -209,10 +219,65 @@ exactly. The divergences split into two different *kinds* of problem:
    fixes this; the existing skip-and-report pattern (proven in T8 for WEB's
    7 unresolvable verses) is the correct handling, not a bug to solve.
 
-**Not yet decided:** whether to build Tests-evaluation + Keep/Renumber-only
-versification_map population (covers category 1, ~88% of rows project-wide)
-now, with category 2 and the Concatenation/Merge/Divide actions staying
-loud documented skips: T9 is paused pending this decision.
+**DECISION (2026-06-30, approved by Justin): per-edition verse identity +
+deterministic verse_alignment. Do NOT build a TVTMS rule engine; do NOT
+hand-curate verses; do NOT force the LXX onto the KJV spine.**
+
+*Root cause of the difficulty:* the original model forced every edition onto the
+single KJV spine through a 1:1 `versification_map`. That fights the data (24 of 39
+OT books diverge; some LXX content has no KJV target at all) and violates invariant
+#4 ("per-edition address; never assume 1:1"). The fix is to stop forcing it, and to
+keep canonical formatting from being imposed on the LXX.
+
+**Schema change (this SUPERSEDES `versification_map`):**
+- `verses` gains `versification TEXT NOT NULL DEFAULT 'canonical'`; the unique key
+  becomes `(versification, book_id, chapter, verse)`. KJV/ASV/WEB and crossrefs keep
+  using `versification='canonical'` rows exactly as today - no migration of existing
+  rows beyond the new column's default.
+- **DROP `versification_map`** (it is empty / schema-only). Replace it with:
+- `verse_alignment (id INTEGER PK, canonical_verse_id INTEGER FK verses,
+  edition_verse_id INTEGER FK verses, relation TEXT NOT NULL, group_id INTEGER NULL,
+  confidence REAL NOT NULL, source_id INTEGER FK sources)`. A typed, many-to-many
+  relation between an edition's OWN verse rows and the canonical rows.
+  `relation` in {exact, renumber, merge, divide, title, moved}. `group_id` ties the
+  members of an n:1 merge or 1:n divide. **LXX-only content** (Ps 151, the Esther/
+  Daniel Greek additions, extra verses) has **no alignment row** - it is fully present
+  as its own verse row, by design. **Canonical-only content** (KJV verses absent from
+  the shorter LXX Jeremiah) likewise has no alignment row. Neither is a skip or a bug;
+  absence of an alignment row IS the data.
+- Update `docs/erd-v1.svg` (currently shows `versification_map`) when convenient -
+  it is stale on this one table.
+
+**Loader model for the LXX (T9/T12/T13):** each LXX loader GET-OR-CREATEs its own
+verse rows under its versification tag (`lxx-brenton`, `lxx-swete`) and FKs its
+text/word rows to those. `verse_id` stays NOT NULL everywhere - no nullable column.
+There is NO canonical resolution at load time; the LXX is loaded completely in its
+own versification. Book-identity that differs per edition (Brenton `EZR` = LXX 2
+Esdras = combined Ezra+Nehemiah; `DAN`->`DAG`, `EST`->`ESG`) is handled at the book
+token, recorded once, not re-litigated per verse.
+
+**T4b = the deterministic verse aligner (new ticket spec, separate from T9):**
+*This is the determinism guarantee (invariant #9) applied. It needs no TVTMS engine
+and no curated verse, because we already parse both editions' real structures and can
+compute directly what TVTMS's Tests were reconstructing without that data.*
+- Input: the canonical verse rows + an edition's own verse rows, both already in the DB.
+- Per (edition-book <-> canonical-book) pair, **sequence-align the two verse lists**
+  (LCS / Needleman-Wunsch) - the SAME machinery as the T22 Swete<->OSS word aligner;
+  build them to share code.
+- **Seed/cross-check from TVTMS's simple rows only** (`Keep verse` + `Renumber verse`
+  = 88.4%, CC-BY) as high-confidence anchors where they apply - NOT as a required rule
+  engine, and the conditional Tests are NOT evaluated; the sequence alignment over real
+  data is the source of truth, TVTMS is corroboration.
+- Emit typed `verse_alignment` rows: 1:1 -> exact (same number) or renumber (shifted);
+  n:1 -> merge (shared `group_id`); 1:n -> divide; unaligned edition verse -> no row
+  (added content); unaligned canonical verse -> no row (absent in this edition).
+- **Re-runnable, identical every run, zero curated verses, no LLM.** Confidence is a
+  number from the alignment, not a judgment call.
+- Acceptance: deterministic (two runs byte-identical); JOL/MAL boundary shifts produce
+  exact 1:1 alignments with matching verse counts; the Ps 9/10 offset produces the
+  right renumber chain; Ps 151 and the Esther/Daniel additions produce edition verse
+  rows with no alignment (assert they exist as verses, assert no alignment row); a
+  known merge/divide produces a shared `group_id`.
 
 ---
 
@@ -296,22 +361,32 @@ textual notes, not bugs. 31,095 of 31,102 canonical verses loaded across all 66
 books; zero markup leakage verified across every row; Gen.1.1/John.3.16/Psalm 3
 (superscription + poetry + Selah) spot-checked against the built DB.
 
-### T9 - verse_text: Brenton LXX (HTML)  `BLOCKED` on T4b
+### T9 - verse_text: Brenton LXX (HTML)  `NEXT` (unblocked by the T4b decision)
 Parse `bible-text/LXX/eng-Brenton_html/*.htm`. Extract `<span class="verse" id="VN">`
 + following text; strip footnote `<a class="notemark">`/`<span class="popup">` and the
-bottom `.footnote` block. Map LXX versification -> canonical via `verses.Resolve`.
-**Acceptance:** a known verse extracts clean (no HTML, no footnote markers); LXX
-Psalm-offset verse lands on the right canonical `verse_id`; 66-book scope only.
-**Status (2026-06-30):** paused mid-attempt - HTML extraction itself is
-straightforward (confirmed format: `<div class="main">`...`<div class="footnote">`
-boundary, inline `<a class="notemark">` footnote markers, `<div class='chapterlabel'
-id="V0">` to exclude, book code from filename `XXXNN.htm`, two code aliases needed
-- `DAN`->`DAG`, `EST`->`ESG`). What's NOT done: the versification mapping this
-ticket's own acceptance criterion requires. Turned out to need T4b (TVTMS), which
-turned out to need real Tests-evaluation logic, not a static map - see the T4
-"T4b scope audit" note for the full chapter/verse divergence data (24 of 39 OT
-books diverge from KJV) and the category-1/category-2 split. T9 resumes once T4b's
-scope is decided.
+bottom `.footnote` block.
+**Load model (per the T4b decision above - this is what unblocked it):** load EVERY
+Brenton verse into its OWN versification. Get-or-create
+`verses(versification='lxx-brenton', book_id, chapter, verse)` and FK each `verse_text`
+row to that row. Do NOT map to canonical here, and do NOT skip anything for lacking a
+KJV target. `verse_id` stays NOT NULL (it points at the lxx-brenton row). Canonical
+alignment is the separate deterministic T4b aligner, not this ticket.
+**HTML extraction (confirmed format, salvaged from the paused attempt):**
+`<div class="main">` ... `<div class="footnote">` boundary; strip inline
+`<a class="notemark">` footnote markers; exclude `<div class='chapterlabel' id="V0">`;
+book code from filename `XXXNN.htm`; book aliases `DAN`->`DAG`, `EST`->`ESG` (Brenton
+ships only the Greek-expanded Daniel/Esther). Load DAG/ESG under the DAN/EST `book_id`
+with `versification='lxx-brenton'`; their extra (deuterocanonical-addition) verses are
+just lxx-brenton verse rows - added content, aligned later or never.
+**Open question (do NOT block on it, do NOT hand-resolve it):** Brenton `EZR` is the
+LXX's combined Ezra+Nehemiah (2 Esdras), and a separate `NEH` file also exists with its
+own smaller divergence. Load Brenton EZR under its own book handling and leave the
+2Es <-> {Ezr, Neh} identity to the T4b aligner / a book-identity note.
+**Acceptance:** a known verse extracts clean (no HTML, no footnote markers); EVERY
+Brenton verse is loaded as an lxx-brenton verse row (per-book counts match the audit
+table's "LXX vrs" column - use those as expected totals); **zero skips**; every row
+carries the Brenton `source_id` and `versification='lxx-brenton'`. No canonical mapping
+is asserted here (that is T4b).
 
 ### T10 - words: TAGNT (Greek NT)  `BLOCKED` on T4, T5, T6
 **Goal:** the workhorse tagged text and the foundation of complete-or-fail.
@@ -344,7 +419,9 @@ regenerate if needed. 66-book scope only (skip deuterocanon).
 **Acceptance:** Gen.1.1 has the right surface forms in order (epoiesen at position 3);
 word count per verse matches the versification file's deltas; rows carry Swete `source_id`,
 NULL lemma.
-**Notes:** parallel per-source stream - NOT merged with OSS (see T13).
+**Notes:** parallel per-source stream - NOT merged with OSS (see T13). Per the T4b
+decision, Swete loads into its OWN versification (`versification='lxx-swete'`,
+get-or-create verse rows, `verse_id` NOT NULL); no canonical mapping at load.
 
 ### T13 - words: OSS LXX lemma  `BLOCKED` on T4
 Parse `bible-text/LXX/GreekResources-master/LxxLemmas/<Book>.js` (JSON objects keyed
@@ -354,6 +431,10 @@ exact-count match Gen 74%, Daniel 58%). Cross-source lemma use joins at the *ver
 until the T22 aligner exists.
 **Acceptance:** Gen.1.1 lemma sequence matches the file (en, arche, poieo, ...); rows
 carry OSS `source_id`, NULL surface; per-verse lemma counts logged for later alignment.
+**Notes:** per the T4b decision, OSS loads into its OWN versification
+(`versification='lxx-oss'`, get-or-create verse rows, `verse_id` NOT NULL). Each LXX
+source (brenton/swete/oss) keeps its own versification tag; relating them is alignment
+work, not load work.
 
 ---
 
@@ -438,7 +519,9 @@ Do NOT LLM-synthesize cross-refs. Phrase-anchored pure-Torrey's TSK = later upgr
 Per-verse sequence alignment (LCS / Needleman-Wunsch) linking Swete surface rows to OSS
 lemma rows where they correspond (~74-83% free, rest via the aligner). Table
 `word_alignment (word_a FK, word_b FK, confidence)`. Enables word-level surface+lemma
-without CCAT.
+without CCAT. **Shares the sequence-alignment core with the T4b verse aligner** - build
+one generic deterministic aligner and apply it at verse granularity (T4b) and word
+granularity (T22). Same determinism guarantee (invariant #9): re-runnable, no LLM.
 
 ### T23 - Rahlfs LXX user-fetch  `V2`
 Optional `cmd/build --fetch-lxx` step: fetch eliranwong/LXX-Rahlfs-1935 (CC-BY-NC-SA,
@@ -455,13 +538,18 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-T1 -> T2 -> T3
-            T4 (DESIGN) ----> T7 -> T8
-            T5 -> T6              T9
-            T4,T5,T6 -> T10, T11        T4 -> T12, T13
-            T10-13 -> T14 -> Phase 5 (T15..T19) -> T20
-            V2: T21, T22, T23, T24 (independent, any time after their deps)
+DONE: T1 -> T2 -> T3, T4a, T5 -> T6, T7 -> T8, T21
+T4a (verses spine) -> T9 (Brenton, per-edition), T12 (Swete), T13 (OSS)
+T4a,T5,T6 -> T10 (TAGNT), T11 (TAHOT)
+T4b (deterministic verse aligner): runs AFTER the LXX loaders exist (it aligns their
+     lxx-* verse rows <-> canonical); shares its alignment core with T22
+T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
+V2 after deps: T22 (word align, shares T4b core), T23, T24
 ```
 
-Recommended next executable order: **T5, T6** (lexical ref data, no verse dep),
-then **T3**, then the **T4 design huddle**, then T7-T13, T14, Phase 5, Phase 6.
+Recommended next executable order: **T9** (Brenton LXX - now unblocked, per-edition
+load), then **T10, T11** (TAGNT/TAHOT words - the complete-or-fail foundation), then
+**T12, T13** (Swete/OSS LXX words), then **T4b** (the deterministic verse aligner, once
+LXX verse rows exist to align), then **T14** (integrity), then Phase 5 and 6.
+
+Build the generic deterministic sequence aligner once (for T4b) and reuse it for T22.

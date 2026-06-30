@@ -32,7 +32,9 @@ The DB is a build artifact (gitignored); the corpus files are the source of trut
 Done: T1 (sources), T2 (books), T4a (verses spine, 31,102), T21 (cross-references, 344,794),
 T5 (lexicon, 22,717), T6 (morph codes, 2,565), T3 (corpus locator), T7 (KJV+ASV text, 62,204),
 T8 (WEB text, 31,095/31,102 - 7 documented textual-critical divergences).
-Paused: T9 (Brenton LXX) - HTML extraction format is confirmed and ready to write,
-but its own acceptance criterion needs T4b (TVTMS), which turned out to need real
-conditional-rule evaluation, not a static map. See PLAN.md's T4 "T4b scope audit"
-for the full divergence data (24 of 39 OT books) before resuming.
+Next: **T9 (Brenton LXX)** - unblocked by the approved T4b design. The LXX is no
+longer forced onto the KJV spine: each edition gets its own verse rows
+(`verses.versification`), and canonical correspondence is a separate **deterministic**
+`verse_alignment` (sequence alignment over parsed data, no TVTMS rule engine, no
+hand-curation, no LLM - invariant #9). See PLAN.md's T4 "DECISION" block and the
+revised T9. Then T10/T11 (words), T12/T13 (LXX words), T4b (aligner), T14.

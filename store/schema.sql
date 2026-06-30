@@ -38,3 +38,44 @@ CREATE TABLE IF NOT EXISTS book_names (
 );
 
 CREATE INDEX IF NOT EXISTS idx_book_names_book ON book_names(book_id);
+
+-- Ticket 4: canonical verse spine + versification divergence map.
+-- Canonical versification = KJV/English Protestant, enumerated from KJV.json.
+-- versification_map holds only the rows where an edition's native ref differs
+-- from canonical (populated by the LXX loaders via TVTMS; T4b).
+
+CREATE TABLE IF NOT EXISTS verses (
+    id       INTEGER PRIMARY KEY,
+    book_id  INTEGER NOT NULL REFERENCES books(id),
+    chapter  INTEGER NOT NULL,
+    verse    INTEGER NOT NULL,
+    UNIQUE (book_id, chapter, verse)
+);
+
+CREATE INDEX IF NOT EXISTS idx_verses_book ON verses(book_id);
+
+CREATE TABLE IF NOT EXISTS versification_map (
+    id              INTEGER PRIMARY KEY,
+    source_id       INTEGER NOT NULL REFERENCES sources(id),
+    native_book     TEXT    NOT NULL,           -- book code in that source's scheme
+    native_chapter  INTEGER NOT NULL,
+    native_verse    INTEGER NOT NULL,
+    verse_id        INTEGER NOT NULL REFERENCES verses(id),
+    UNIQUE (source_id, native_book, native_chapter, native_verse)
+);
+
+-- Ticket 21: deterministic cross-references (OpenBible.info / TSK, CC-BY).
+-- to_verse_end is non-null only for ranged targets (e.g. Col.1.16-Col.1.17).
+-- votes is the signed community weight (negatives = disputed; kept as data).
+
+CREATE TABLE IF NOT EXISTS cross_references (
+    id            INTEGER PRIMARY KEY,
+    from_verse    INTEGER NOT NULL REFERENCES verses(id),
+    to_verse      INTEGER NOT NULL REFERENCES verses(id),
+    to_verse_end  INTEGER REFERENCES verses(id),   -- nullable: ranged target
+    votes         INTEGER NOT NULL,
+    kind          TEXT    NOT NULL DEFAULT 'thematic',
+    source_id     INTEGER NOT NULL REFERENCES sources(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_xref_from ON cross_references(from_verse);

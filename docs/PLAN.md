@@ -102,10 +102,15 @@ sentinel when a required tree is absent. Glob expansion is deterministic (sorted
 **Notes:** keep `source_file` patterns logical (already in sources.json); the
 locator is the only path-aware code.
 
-### T4 - verses spine + versification_map (TVTMS)  `DESIGN` then build
-**Goal:** the canonical verse spine every text/word row FKs to, plus the
-edition-divergence map.
-**Decide first (confirm with Justin):**
+### T4 - verses spine + versification_map (TVTMS)  `T4a DONE` · T4b deferred
+**Status:** T4a (verses spine) DONE - canonical = KJV/English, enumerated from
+KJV.json (31,102 verses / 1,189 chapters), `verses.BuildSpine` + scheme-aware
+`verses.Resolver` + `ErrUnknownVerse`. `name-en` aliases corrected to the KJV/ASV
+JSON form (Roman numerals, "Revelation of John"). **T4b** (populate
+`versification_map` from TVTMS for LXX divergences) is deferred to when the LXX
+loaders (T9/T12/T13) need it; the table exists, empty.
+**Original goal / design (kept for T4b):**
+**Decided:**
 - Canonical versification basis. **Recommended:** standard KJV/English Protestant
   versification, enumerated from `KJV.json` (it contains every book/chapter/verse;
   ~31,102 verses, 1,189 chapters, 66 books). The English editions then map 1:1;
@@ -290,7 +295,13 @@ guarantees hold across the boundary.
 
 # Phase 7 - Deferred / v2
 
-### T21 - cross_references (OpenBible / TSK)  `V2`
+### T21 - cross_references (OpenBible / TSK)  `DONE`
+Loaded: `crossrefs.Load` reads `cross_references.txt` (CC-BY), resolves OSIS via the
+`verses.Resolver`, inserts to `cross_references` with `to_verse_end` (ranges) and signed
+`votes`. Full build: 344,794 inserted / 5 skipped (reported, not dropped). `OpenBible-xref`
+source added; `crossref` added to allowed types. Original spec below.
+
+### T21 (original spec) - cross_references (OpenBible / TSK)
 Load `cross_references.txt` (TSV `From | To(+range) | Votes`, OSIS refs, CC-BY, ~344,799
 rows). Schema: `cross_references (id, from_verse FK, to_verse FK, to_verse_end FK NULL,
 votes, source_id, kind)`. Add `crossref` to `sources.type`; add an `OpenBible-xref`

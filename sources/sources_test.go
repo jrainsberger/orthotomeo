@@ -37,6 +37,7 @@ func TestRegistryWellFormed(t *testing.T) {
 	allowedType := map[string]bool{
 		"translation": true, "original": true, "lemma": true,
 		"lexicon": true, "morph-codes": true, "versification": true,
+		"crossref": true,
 	}
 	seen := map[string]bool{}
 	for _, s := range reg {

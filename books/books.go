@@ -100,12 +100,20 @@ func Seed(db *sql.DB) (books, aliases int, err error) {
 	return books, aliases, nil
 }
 
+// Querier is the subset of *sql.DB and *sql.Tx that Resolve needs, so it can
+// run standalone or inside a caller's transaction. The pool is single-connection
+// (see store.Open), so querying the *sql.DB while a transaction is open would
+// deadlock; callers inside a transaction must pass the *sql.Tx.
+type Querier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // Resolve returns the books.id for a native book name under the given scheme
 // (usfm | osis | dotted | name-en). It wraps ErrUnknownBook when the pair is
 // not registered, so callers can branch on a missing book vs. a query error.
-func Resolve(db *sql.DB, scheme, value string) (int64, error) {
+func Resolve(q Querier, scheme, value string) (int64, error) {
 	var id int64
-	err := db.QueryRow(
+	err := q.QueryRow(
 		`SELECT book_id FROM book_names WHERE scheme = ? AND value = ?`,
 		scheme, value,
 	).Scan(&id)

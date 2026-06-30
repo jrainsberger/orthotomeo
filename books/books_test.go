@@ -107,7 +107,8 @@ func TestResolveCrossScheme(t *testing.T) {
 		{"Psalms", "PSA", "Ps", "Psa", "Psalms"},
 		{"Song", "SNG", "Song", "Sng", "Song of Solomon"},
 		{"Philemon", "PHM", "Phlm", "Phm", "Philemon"},
-		{"1 Corinthians", "1CO", "1Cor", "1Co", "1 Corinthians"},
+		{"1 Corinthians", "1CO", "1Cor", "1Co", "I Corinthians"},
+		{"Revelation", "REV", "Rev", "Rev", "Revelation of John"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

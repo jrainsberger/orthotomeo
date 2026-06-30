@@ -20,6 +20,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/store"
 	"github.com/jrainsberger/orthotomeo/verses"
 	"github.com/jrainsberger/orthotomeo/versetext"
+	"github.com/jrainsberger/orthotomeo/webtext"
 )
 
 func main() {
@@ -83,9 +84,13 @@ func run(out, root, reference string) error {
 	if err != nil {
 		return err
 	}
+	nWeb, nWebSkip, nWebBooks, err := loadWebText(db, roots)
+	if err != nil {
+		return err
+	}
 
-	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts -> %s\n",
-		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, out)
+	fmt.Printf("seeded %d sources, %d books (%d aliases), %d verses, %d cross-refs (%d skipped), %d lexicon entries, %d morph codes, %d verse texts, %d WEB verses (%d books, %d skipped) -> %s\n",
+		nSrc, nBook, nAlias, nVerse, nXref, nSkip, nLex, nMorph, nText, nWeb, nWebBooks, nWebSkip, out)
 	return nil
 }
 
@@ -188,6 +193,42 @@ func loadVerseText(db *sql.DB, roots []string) (int, error) {
 	}
 
 	return nKJV + nASV, nil
+}
+
+// loadWebText loads every WEB USFM file (one per book, plus front matter,
+// glossary, and deuterocanon files outside v1 scope - webtext.Load reports
+// those as not loaded rather than an error).
+func loadWebText(db *sql.DB, roots []string) (inserted, skipped, nBooks int, err error) {
+	src, err := sourceByCode("WEB")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	paths, err := corpus.Locate(src, roots...)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("locate WEB: %w", err)
+	}
+
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("open %s: %w", path, err)
+		}
+		code, n, skip, loaded, err := webtext.Load(db, f)
+		f.Close()
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("%s: %w", path, err)
+		}
+		if !loaded {
+			continue
+		}
+		inserted += n
+		skipped += skip
+		nBooks++
+		if skip > 0 {
+			fmt.Printf("  WEB %s: %d verses skipped (unresolved against canonical spine)\n", code, skip)
+		}
+	}
+	return inserted, skipped, nBooks, nil
 }
 
 // loadMorphCodes loads TEGMC (Greek) and TEHMC (Hebrew).

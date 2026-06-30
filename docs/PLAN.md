@@ -193,12 +193,34 @@ canonical spine, so a miss would mean the spine itself is wrong. 31,102 KJV +
 31,102 ASV = 62,204 rows; Gen.1.1/John.3.16 spot-checked verbatim against the
 built DB for both editions.
 
-### T8 - verse_text: WEB (USFM)  `BLOCKED` on T7
+### T8 - verse_text: WEB (USFM)  `DONE`
 Parse `bible-text/WEB/*.usfm` (`NN-XXXeng-web.usfm`). Strip `\w word|strong=...\w*`
 to the bare word, drop `\f...\f*` footnotes and `\c/\v/\p` markers to recover prose.
 Resolve book via `usfm` scheme. Skip front matter / glossary files (00-FRT, 106-GLO).
 **Acceptance:** Gen/John prose matches after stripping; chapter/verse counts within
 documented WEB versification; no USFM markup leaks into `text`.
+**Notes (as built):** USFM needed more than the three markers named above to avoid
+silent data loss. Poetry books (Psalms, Job, Proverbs, ...) use `\q1/\q2/\q3` line
+breaks with no new `\v` - a verse's text is accumulated until the next `\c`/`\v`,
+not read off one line, or every poetry verse after the first line would be
+truncated. Also handled: `\+w`/`\+w*` (the words-of-Jesus word-wrapper variant,
+used inside `\wj...\wj*`), `\qs...\qs*` (Selah, kept as text), `\x...\x*`
+(cross-references, dropped like footnotes), and a `nonContentMarkers` skip-list
+(`\id`, `\s1`, `\d` Psalm superscriptions, `\ip`, etc.) for lines with no verse
+text. `\d` superscriptions (138 in Psalms) carry real canonical text but no `\v`
+of their own in this edition - out of v1 scope, dropped rather than guessing a
+verse-0 attachment.
+Of 83 `*.usfm` files, 17 are front matter/glossary/deuterocanon and are skipped
+(not an error) via `books.Resolve("usfm", code)` failing; all 66 canonical codes
+present. Unlike T7, an unresolvable verse is counted as skipped, not a load
+failure (invariant #4: WEB's own front matter documents real versification
+divergences from the KJV-based canonical spine). Verified against the actual
+divergences found: Luke 17:36, Acts 8:37/15:34/24:7 (Textus-Receptus-only
+readings WEB relegates to footnotes) and Romans 16:25-27 (WEB relocates this
+content to 14:24-26) - all 7 cross-checked against the front matter's own
+textual notes, not bugs. 31,095 of 31,102 canonical verses loaded across all 66
+books; zero markup leakage verified across every row; Gen.1.1/John.3.16/Psalm 3
+(superscription + poetry + Selah) spot-checked against the built DB.
 
 ### T9 - verse_text: Brenton LXX (HTML)  `BLOCKED` on T4
 Parse `bible-text/LXX/eng-Brenton_html/*.htm`. Extract `<span class="verse" id="VN">`

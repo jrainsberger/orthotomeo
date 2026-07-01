@@ -24,7 +24,17 @@ const sourceCode = "TAGNT"
 // find data rows - the file repeats its own column-header row and a
 // preview block (Greek/English/grammar synopsis lines, "#"-prefixed)
 // before every verse, not just once at the top.
-var refRe = regexp.MustCompile(`^([A-Za-z0-9]+)\.(\d+)\.(\d+)#(\d+)=(\S+)$`)
+//
+// A small number of rows (26 across both files: Act.13.39(13.38),
+// Act.19.41(19.40), Rom.3.25(3.26), Mrk.12.15(12.14)) carry an optional
+// "(Chapter.Verse)" suffix on the verse field, the same edition-versus-
+// English-standard cross-reference convention T11's TAHOT loader tolerates
+// (see tahot.go's refRe doc for the confirmed source). The number outside
+// the parens is the English/standard verse this loader already resolves
+// against; before this was tolerated, refRe simply failed to match these
+// 26 rows and they were silently dropped, uncounted by any skip/insert
+// counter.
+var refRe = regexp.MustCompile(`^([A-Za-z0-9]+)\.(\d+)\.(\d+)(?:\(\d+\.\d+\))?#(\d+)=(\S+)$`)
 
 // Load reads one TAGNT TSV (Mat-Jhn or Act-Rev) and inserts every data row
 // into words. Verses that fail to resolve against the canonical spine are

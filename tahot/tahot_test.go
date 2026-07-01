@@ -15,7 +15,8 @@ import (
 
 const miniSpine = `{"books":[
   {"name":"Genesis","chapters":[{"chapter":1,"verses":[{"verse":1}]}]},
-  {"name":"Isaiah","chapters":[{"chapter":44,"verses":[{"verse":24}]}]}
+  {"name":"Isaiah","chapters":[{"chapter":44,"verses":[{"verse":24}]}]},
+  {"name":"Psalms","chapters":[{"chapter":9,"verses":[{"verse":1}]}]}
 ]}`
 
 // Mirrors the real TAHOT shape: a Hebrew/translation/grammar preview block
@@ -40,7 +41,16 @@ const fixtureTAHOT = "TAHOT - Translators Amalgamated Hebrew Old Testament\n" +
 	"Exo.1.1#01=L\tוְ/אֵ֨לֶּה\tve./'El.leh\tand/ these\tH9002/{H0428}\tHC/Pdxcp\t\t\tH0428\t\t\tH9002=ו=and/{H0428=אֵ֫לֶּה=these}\n" +
 	"\n" +
 	"Eng (Heb) Ref & Type\tHebrew\tTransliteration\tTranslation\tdStrongs\tGrammar\tMeaning Variants\tSpelling Variants\tRoot dStrong+Instance\tAlternative Strongs+Instance\tConjoin word\tExpanded Strong tags\n" +
-	"Isa.44.24#16=Q(K)\t\t[ ]\t[ ]\t\t\tK= mi (מִי) \"who [was]?\" (H4310=HPi)\tL= מֵי ¦ ;\t\t\t\t\n"
+	"Isa.44.24#16=Q(K)\t\t[ ]\t[ ]\t\t\tK= mi (מִי) \"who [was]?\" (H4310=HPi)\tL= מֵי ¦ ;\t\t\t\t\n" +
+	"\n" +
+	// A real dual-numbered ref (mirrors the actual corpus: an entitled
+	// psalm's Hebrew verse count runs one ahead of the English/standard
+	// verse the title itself isn't separately numbered in - "Psa.9.1(9.2)"
+	// means English/standard verse 1, Hebrew verse 2). Before refRe
+	// tolerated this, EVERY verse of every entitled psalm (21,944 rows
+	// across the real corpus) matched nothing and vanished uncounted.
+	"Eng (Heb) Ref & Type\tHebrew\tTransliteration\tTranslation\tdStrongs\tGrammar\tMeaning Variants\tSpelling Variants\tRoot dStrong+Instance\tAlternative Strongs+Instance\tConjoin word\tExpanded Strong tags\n" +
+	"Psa.9.1(9.2)#01=L\tאוֹדֶ֣ה\to.Deh\tI will give thanks\t{H3034A}\tHVhi1cs\t\t\tH3034A\t\t\t{H3034A=יָדָה=: to thank}\n"
 
 func setup(t *testing.T) *sql.DB {
 	t.Helper()
@@ -71,16 +81,35 @@ func TestLoadSkipsHeaderAndPreviewBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	// Gen.1.1#01, #02, Isa.44.24#16 = 3 rows; Exo.1.1#01 is not in the mini
-	// spine and must be skipped.
-	if inserted != 3 {
-		t.Errorf("inserted = %d, want 3", inserted)
+	// Gen.1.1#01, #02, Isa.44.24#16, Psa.9.1(9.2)#01 = 4 rows; Exo.1.1#01 is
+	// not in the mini spine and must be skipped.
+	if inserted != 4 {
+		t.Errorf("inserted = %d, want 4", inserted)
 	}
 	if skipped != 1 {
 		t.Errorf("skipped = %d, want 1 (Exo.1.1 not in mini spine)", skipped)
 	}
 	if untagged != 1 {
 		t.Errorf("untagged = %d, want 1 (Isa.44.24#16 has no braced segment)", untagged)
+	}
+}
+
+func TestLoadToleratesDualNumberedRef(t *testing.T) {
+	db := setup(t)
+	if _, _, _, err := tahot.Load(db, strings.NewReader(fixtureTAHOT)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var ch, v int
+	err := db.QueryRow(`
+		SELECT verse.chapter, verse.verse FROM words w
+		JOIN verses verse ON verse.id = w.verse_id
+		WHERE w.source_locator = 'Psa.9.1(9.2)#01=L'`).Scan(&ch, &v)
+	if err != nil {
+		t.Fatalf("query Psa.9.1(9.2)#01: %v (the row was silently dropped)", err)
+	}
+	if ch != 9 || v != 1 {
+		t.Errorf("resolved to %d:%d, want 9:1 (the English/standard number outside the parens)", ch, v)
 	}
 }
 

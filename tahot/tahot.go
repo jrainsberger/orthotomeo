@@ -32,7 +32,26 @@ const sourceCode = "TAHOT"
 // e.g. "Gen.1.1#01=L", "Isa.44.24#16=Q(K)". As with TAGNT, this is the only
 // reliable way to find data rows - the file repeats its own column-header
 // row and a Hebrew/translation/grammar preview block before every verse.
-var refRe = regexp.MustCompile(`^([A-Za-z0-9]+)\.(\d+)\.(\d+)#(\d+)=(\S+)$`)
+//
+// The verse field carries an optional "(Chapter.Verse)" suffix wherever the
+// file's own Hebrew-native verse count differs from the English/NRSV verse
+// this loader resolves against - e.g. "Psa.9.1(9.2)#01=L" (confirmed by the
+// file's own header, line 32: "Ref: Eng (+Heb) ... Bible reference in
+// English Bibles ... with Heb refs in brackets when they are different").
+// The English number outside the parens is always what's used - it's the
+// number this loader already resolved against, unchanged; the parenthetical
+// is discarded, not consumed. Before this was tolerated, refRe simply failed
+// to match any such row, silently dropping it before it reached the
+// resolver or any skip/untagged counter (confirmed: 21,944 rows across all
+// four TAHOT files, concentrated in Psalms - Hebrew numbers a psalm's
+// superscription as its own verse 1, shifting every later verse by +1
+// relative to English, so essentially every verse of an entitled psalm
+// carried the annotation). A verse field of "0(N.1)" - the title itself,
+// which English versification doesn't number separately (T11's package doc,
+// line 33: "Psalm Titles (v.0)") - still correctly fails to resolve against
+// the canonical spine (no verse 0 exists there) and is counted as
+// skippedVerse, not silently lost.
+var refRe = regexp.MustCompile(`^([A-Za-z0-9]+)\.(\d+)\.(\d+)(?:\(\d+\.\d+\))?#(\d+)=(\S+)$`)
 
 // braceRe extracts the content of a "{...}" span - the root/lexical
 // segment, as opposed to an unbraced prefix segment. Matches even when the

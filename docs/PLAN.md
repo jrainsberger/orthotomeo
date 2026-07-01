@@ -545,6 +545,18 @@ Final: 141,720 words (66,931 Mat-Jhn + 74,789 Act-Rev, exact match to source dat
 counts), 273 compound, 0 unresolved verses. Acts.8.37 spot-checked as 23 all-K/TR
 rows; John.1.1 word #2 spot-checked as surface=ἀρχῇ, lemma=ἀρχή, dstrong=G0746.
 
+**T10 UPDATE (2026-06-30, found via T15 smoke-testing):** `refRe` required the ref
+field's verse to be pure digits immediately before `#`, so any row whose verse field
+carried a `(Chapter.Verse)` suffix - the file's own convention for where an edition's
+verse split differs from the English/NRSV-standard one it's tagged against (e.g.
+`Rom.3.25(3.26)`) - matched nothing and was dropped **before reaching any skip/insert
+counter**, so `0 skipped` was true but incomplete: some rows were never counted at
+all. 26 rows across both files (`Act.13.39(13.38)`, `Act.19.41(19.40)`,
+`Rom.3.25(3.26)`, `Mrk.12.15(12.14)`). Fixed by tolerating an optional
+`(?:\(\d+\.\d+\))?` before `#` and discarding it - the number outside the parens
+(what the loader already resolved against) is unchanged. New final: **141,746**
+words, still 0 skipped.
+
 ### T11 - words: TAHOT (Hebrew OT)  `DONE`
 Same `words` shape, from `STEPBible-Data/.../TAHOT*.txt`. Hebrew morphology, Aramaic
 sections, **Ketiv/Qere** preserved (record both as data, do not collapse). Resolve book
@@ -578,6 +590,31 @@ counts across all four files), 13 untagged, 0 unresolved verses. Gen.1.1 word #1
 spot-checked as surface=בְּ/רֵאשִׁ֖ית (verbatim), lemma=רֵאשִׁית, dstrong=H7225G (the
 root, not the H9003 prefix), morph=Ncfsa; Gen.27.3's Ketiv/Qere verse spot-checked
 in the built DB.
+
+**T11 UPDATE (2026-06-30, found via T15 smoke-testing GetVerse/ResolveRef against
+the real DB - Ps.9.1 showed `TAHOT: exists=false`, which is wrong; Psalms is a
+covered OT book):** the same `refRe` gap as T10's update, at far larger scale. Every
+entitled psalm's Hebrew verse-count runs one ahead of the English/standard verse it's
+tagged against (the title is its own Hebrew verse 1, not separately numbered in
+English - T11's own header, line 33: "Psalm Titles (v.0)"), so nearly every verse of
+nearly every entitled psalm carried a `(Chapter.Verse)` suffix and matched nothing:
+**21,440 rows dropped, uncounted, across all four TAHOT files** - `0 skipped` was
+true but incomplete, the same way as T10, just three orders of magnitude larger.
+Fixed with the identical regex tolerance. The title rows themselves (verse `0`, e.g.
+`Psa.9.0(9.1)`) still correctly fail to resolve against the canonical spine (English
+versification has no verse 0) and are now counted as skippedVerse, not silently
+lost - `skipped` went from 0 to 478 (all Psalm-title rows). New final: **305,174**
+words, 478 skipped (documented, not a regression), 14 untagged.
+
+This is the strongest evidence yet for invariant #3/T14: a completeness self-test
+proves rows aren't dropped only as far as its own checks reach. T14's book-level
+`checkBookCoverage` correctly reported TAHOT covering Psalms (chapters 1, 2, 10, 11...
+all had rows) and missed that chapter 9 specifically had zero - a chapter-level gap,
+not a book-level one. Caught instead by T15's retriever surfacing a concrete,
+individually-wrong answer (`Ps.9.1` "not present in TAHOT") during ordinary use, not
+by a completeness assertion. Recorded as a known verify limitation, not fixed now
+(scope discipline - see the closing note under T15 below): `checkBookCoverage`
+currently proves no book is silently *empty*; it does not prove no *chapter* is.
 
 ### T12 - words: Swete LXX (Greek surface)  `DONE`
 Parse `LXX-Swete-1930/01-Swete_word_with_punctuations.csv` (index -> surface) +
@@ -764,11 +801,74 @@ verify: OK (all completeness checks passed)
 Read-only. Every call returns `Citation`-bearing results (Concord spec §5). Implement
 against the built DB; the engine is the deterministic reference monitor.
 
-### T15 - Citation + reference resolution  `BLOCKED` on Phase 3
+**Phase 5 is the single query seam.** T15-T19 are the engine's public API, and T25
+(below) aggregates them into one facade package. Every access surface in Phase 6
+(MCP, CLI, HTTP+web, desktop) imports that facade and nothing lower - no transport
+touches `store`, `verses`, `words`, or raw SQL directly. That keeps complete-or-fail
+(invariant #3) and provenance (#2) enforced in exactly one place, and blocks the
+lexica anti-pattern (a transport building its own SQL) structurally, not by
+convention. The engine is the reference monitor; the transports are dumb pipes.
+
+### T15 - Citation + reference resolution  `DONE`
 `Citation` type (ref, edition, verbatim text, source_file+locator, lemma?, dstrong?,
 morph?, attestation?, confidence, caveat). `ResolveRef`, `GetVerse`, `GetPassage`.
 **Acceptance:** GetVerse returns verbatim per-edition text with provenance; a ref that
 diverges across editions returns per-edition addresses + caveats, never a silent shift.
+
+### T15 AS-BUILT (2026-06-30)
+
+Shipped as the `retriever` package: `Ref` (USFM book code + chapter + verse, always
+canonical/edition-neutral), `Citation`, `Address`, `Resolution`, `Confidence`
+(`High`/`Flagged`), and `ResolveRef` / `GetVerse` / `GetPassage`.
+
+**Two edition-reaching strategies, matching how each source was actually loaded:**
+canonical-keyed editions (KJV/ASV/WEB verse_text, TAGNT/TAHOT words) were loaded by
+resolving directly against the canonical spine (T7/T8/T10/T11), so a canonical Ref's
+`verses.id` IS their key - no lookup needed beyond `WHERE verse_id = ?`.
+Alignment-keyed editions (Brenton verse_text, Swete/OSS words - T9/T12/T13) own their
+own versification entirely and are reached only through T4b's `verse_alignment` table,
+never a verse-number guess. `ResolveRef` reports on all 8; `GetVerse`/`GetPassage`
+serve only the 4 verse_text (prose) editions - TAGNT/TAHOT/Swete/OSS are word-tagged
+streams, not prose, and are T17's (Parse/Lemmatize) surface, not GetVerse's.
+
+**"Never a silent shift" (the acceptance criterion), concretely:** an edition with no
+counterpart for a Ref - whether it's simply missing (a WEB skip) or has no T4b
+alignment (a genuine LXX/Hebrew divergence) - still produces one `Address`/`Citation`
+for that edition, `Exists:false` / `Confidence:Flagged`, with a `Caveat` naming why.
+Nothing is silently omitted from the result set. A T4b `merge`/`divide`/`renumber`
+relation produces `Confidence:Flagged` with a `Caveat` naming the relation and
+confidence - `exact` is the only relation that yields `Confidence:High` with no
+caveat. Proven with a fixture shaped like the real Ps9/10 Hebrew/LXX divergence
+(`retriever_test.go`): canonical Ps.9.1 aligned to Brenton via a `divide`/`renumber`
+relation (not `exact`) returns a real, correctly-addressed Brenton verse, Flagged,
+with the relation named in the Caveat - never a coincidentally-matching wrong verse
+presented as if it were exact.
+
+**A real bug T15 found (not a T15 bug - a T10/T11 loader bug), the same shape twice:**
+smoke-testing `ResolveRef(PSA.9.1)` against the real built DB showed `TAHOT:
+exists=false` - wrong, Psalms is a fully in-scope OT book. Traced to `refRe` in both
+`tagnt.go` and `tahot.go`: the ref field's verse must be pure digits immediately
+before `#`, but STEPBible's own convention appends an optional
+`(EditionChapter.EditionVerse)` cross-reference whenever a file's own verse split
+differs from the English/NRSV-standard verse it's tagged against - a row carrying
+that suffix matched nothing and was silently dropped **before reaching any
+skip/insert counter**, so both loaders' `0 skipped` claims were true but incomplete.
+TAGNT: 26 rows (tiny - occasional edition-split differences like `Rom.3.25(3.26)`).
+TAHOT: 21,440 rows (huge - Hebrew numbers a psalm's superscription as its own verse
+1, so nearly every verse of nearly every entitled psalm carried the suffix). Fixed
+identically in both: `refRe` now tolerates `(?:\(\d+\.\d+\))?` before `#` and
+discards it, keeping the English/standard number outside the parens unchanged (see
+T10/T11 UPDATE blocks above for the full trace and new totals). This is why T15
+matters as a real integration test, not just new code: it exercised real cross-
+edition joins T10/T11's and T14's own unit/completeness tests never happened to hit.
+
+**Known verify limitation surfaced, deliberately not fixed here:** T14's
+`checkBookCoverage` proves no book is silently *empty*; it does not prove no
+*chapter* within a covered book is. Psalm 9 had zero TAHOT rows while the book-level
+check passed clean (other Psalm chapters had rows). A chapter-level coverage check
+would have caught this without needing T15 to stumble into it. Recorded as a T14
+follow-up, not built now - scope discipline: T15's job was the retriever, not
+re-opening T14.
 
 ### T16 - concordance (the killer feature)  `BLOCKED` on T15
 `ConcordLemma(lemma|dstrong)`, `ConcordPhrase(tokens, {adjacent|window:N})`, `Count`.
@@ -792,16 +892,94 @@ sanctioned bridge from engine output to a study deliverable.
 
 ---
 
-# Phase 6 - MCP server
+# Phase 6 - Access surfaces (shared seam + transports)
 
-### T20 - MCP surface  `BLOCKED` on Phase 5
-Expose the engine tools over MCP (read-only). Natural-language queries are allowed but
-MUST route to the deterministic tools (ConcordLemma/ConcordPhrase), never generate raw
-SQL (the lexica anti-pattern). The MCP server is the engine; the LLM client is the
-analysis layer. Tool definitions: provider = latest Claude per `D:\Claude\Bible` API
-guidance if a client is built.
+Every transport here is a thin adapter over the T25 facade. None owns query logic,
+SQL, or completeness enforcement - that all lives in Phase 5. Build the seam (T25)
+first; MCP / CLI / HTTP / desktop then fall out cheaply and identically.
+
+### T25 - `engine` facade (the shared seam)  `BLOCKED` on Phase 5
+**Goal:** one read-only Go package that every transport imports - the single seam,
+so a front-end adds a UI, never a second copy of the query rules.
+**Scope:**
+- New `engine` package: `Open(dbPath string) (*Engine, error)` opens the built DB
+  **read-only** (`store.Open` in a read-only mode; reject writes at the connection).
+- Methods delegate 1:1 to Phase 5: `ResolveRef`, `GetVerse`, `GetPassage`,
+  `ConcordLemma`, `ConcordPhrase`, `Count`, `Parse`, `Lemmatize`, `Attestation`,
+  `Cite`. All return the Phase-5 `Citation`-bearing types unchanged.
+- The facade is the **only** symbol transports import. `store`/`verses`/`words` etc.
+  stay internal to it; a transport that needs SQL is a design failure, not a feature.
+**Schema:** none.
+**Acceptance:** every Phase-5 operation is reachable through `engine` alone;
+`Count(q) == len(Concord(q))` holds *through the facade* (not just under it); a write
+attempted on the opened DB fails; the package imports no transport and exposes no
+`*sql.DB`. A `grep` for `database/sql` or `store.` outside `engine`/loaders is empty.
+
+### T20 - MCP surface  `BLOCKED` on T25
+Expose the `engine` facade tools over MCP (read-only). Natural-language queries are
+allowed but MUST route to the deterministic facade methods
+(`ConcordLemma`/`ConcordPhrase`), never generate raw SQL (the lexica anti-pattern).
+The MCP server is the engine; the LLM client is the analysis layer. Tool definitions:
+provider = latest Claude per `D:\Claude\Bible` API guidance if a client is built.
 **Acceptance:** each tool callable over MCP returns Citation-bearing JSON; completeness
-guarantees hold across the boundary.
+guarantees hold across the boundary; the server imports `engine` only.
+
+### T26 - CLI adapter  `BLOCKED` on T25
+**Goal:** the thinnest human/scriptable surface, and the facade's first smoke test -
+if the CLI is awkward, the API is awkward.
+**Scope:** `cmd/orthotomeo` with subcommands over `engine`: `lookup <ref> [--edition]`,
+`concord <lemma|dstrong> [--phrase <tokens> --window N|--adjacent]`, `parse <ref>`,
+`attest <ref>`. Stdlib `flag` only (no cobra dep). Text output by default, `--json`
+emits the exact `Citation` payload the HTTP surface (T27) reuses. Opens a prebuilt DB
+read-only; never triggers a build.
+**Acceptance:** `orthotomeo concord G0859` prints every aphesis row (incl. the Matt
+26:28 control) with citations; `--json` output is byte-identical to T27's for the same
+query; a forced partial read exits non-zero (complete-or-fail surfaces as an error,
+not a short list).
+
+### T27 - HTTP + local web UI  `BLOCKED` on T25
+**Goal:** the browser-facing seam. The browser renders polytonic Greek and RTL Hebrew
+correctly for free - the reason a web UI beats a native-toolkit renderer here.
+**Scope:**
+- `httpapi` package, stdlib `net/http` only (no framework dep). Read-only **GET**
+  endpoints delegating to `engine`: `/verse`, `/passage`, `/concord`, `/parse`,
+  `/attest`; every response is Citation-bearing JSON (same shape as T26 `--json`).
+- Static web UI served from the same binary via `embed.FS`: a search box + results
+  table that renders Greek/Hebrew in the browser. No JS framework unless brought for
+  approval; plain fetch + templates is the default.
+- **Security (dual mindset, baked into the ticket):** bind `127.0.0.1` only, never
+  `0.0.0.0`; GET-only, no mutation surface, no raw-SQL passthrough (goes through
+  `engine`); a distributed build serves only `sources.shippable=1` text (gate
+  non-shippable editions like a fetched Rahlfs LXX out of the served set); no secrets,
+  no auth needed for a loopback read-only server, but document the loopback assumption
+  so nobody re-binds it to a LAN.
+**Acceptance:** `GET /concord?dstrong=G0859` returns the full set as JSON;
+`Count == len(Concord)` across the HTTP boundary; the web UI renders one Greek and one
+Hebrew result legibly; the listener is loopback-only (assert the bind address);
+a non-shippable edition is absent from a shippable-mode response.
+
+### T28 - Fyne desktop launcher  `BLOCKED` on T27
+**Goal:** an offline, no-browser-juggling native launcher, matching the Footsteps
+desktop pattern (desktop app starts the web server, opens the browser, and stops the
+server on close).
+**Scope:** `cmd/orthotomeo-desktop`, a Fyne app that:
+1. starts the T27 HTTP server on an ephemeral **loopback** port;
+2. opens the default browser to `http://orthotomeo.localhost:<port>/` (the
+   `*.localhost` host resolves to 127.0.0.1 per RFC 6761; matches the house
+   `*.localhost` test-domain convention and Footsteps' `footsteps.localhost`);
+3. shows a minimal status window / tray (running, port, quit);
+4. on window close / quit, cancels the server context, waits for a clean shutdown
+   (port released, no orphan process), and exits.
+- **Fyne renders NO scripture** - it is a lifecycle shell only; the browser owns all
+  Greek/Hebrew rendering. This is what keeps the "thin wrapper" actually thin and
+  sidesteps Fyne's complex-script/RTL weaknesses.
+**Dependency:** `fyne.io/fyne/v2` - the only new dep T28 adds; **approved**
+(2026-06-30), precedent from Footsteps and other apps. `modernc.org/sqlite` (also
+approved) is already the engine's driver (`store/store.go`, pure-Go, no cgo), so the
+whole build - engine, HTTP, and desktop - stays C-toolchain-free with no migration.
+**Acceptance:** launching the binary opens the working search UI in the browser;
+quitting stops the server (port freed, process exits, verified no orphan); Fyne itself
+draws no verse text; run on Windows (primary) at minimum.
 
 ---
 
@@ -848,10 +1026,14 @@ T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (O
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
-T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15..T19) -> T20
+T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, DONE ..T19)
+Phase 5 (T15..T19) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
+T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T15** (Citation + reference resolution,
-Phase 5's foundation), then T16-T19, then Phase 6 (T20). All of Phase 3 (text/word
-import), T4b, and T14 are now DONE.
+Recommended next executable order: **T16** (concordance, the killer feature),
+then T17-T19, then **T25** (the facade/seam), then the transports fan out cheaply
+from it: **T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local web
+UI) in parallel, then **T20** (MCP) and **T28** (Fyne desktop launcher). All of
+Phase 3 (text/word import), T4b, T14, and T15 are now DONE.

@@ -15,7 +15,7 @@ import (
 
 const miniSpine = `{"books":[
   {"name":"Matthew","chapters":[{"chapter":1,"verses":[{"verse":1}]},{"chapter":4,"verses":[{"verse":6}]}]},
-  {"name":"John","chapters":[{"chapter":1,"verses":[{"verse":1}]}]}
+  {"name":"John","chapters":[{"chapter":1,"verses":[{"verse":1},{"verse":2}]}]}
 ]}`
 
 // Mirrors the real TAGNT shape: the "Word & Type" column header and a
@@ -43,7 +43,14 @@ const fixtureTAGNT = "TAGNT - Translators Amalgamated Greek New Testament\n" +
 	"Jhn.1.1#02=NKO\tἀρχῇ (archē)\tbeginning\tG0746=N-DSF\tἀρχή=beginning\tNA28+NA27+Tyn+SBL+WH+Treg+TR+Byz\n" +
 	"\n" +
 	"Word & Type\tGreek\tEnglish translation\tdStrongs = Grammar\tDictionary form =  Gloss\teditions\n" +
-	"Mark.1.1#01=K\tἀρχὴ (archē)\tbeginning\tG0746=N-NSF\tἀρχή=beginning\tTR\n"
+	"Mark.1.1#01=K\tἀρχὴ (archē)\tbeginning\tG0746=N-NSF\tἀρχή=beginning\tTR\n" +
+	"\n" +
+	// A real dual-numbered ref shape (e.g. Rom.3.25(3.26) in the actual
+	// corpus): English/standard verse 2 outside the parens, an edition's own
+	// differing verse split (here 1.3, arbitrary) inside. Before refRe
+	// tolerated this, the row matched nothing and vanished uncounted.
+	"Word & Type\tGreek\tEnglish translation\tdStrongs = Grammar\tDictionary form =  Gloss\teditions\n" +
+	"Jhn.1.2(1.3)#01=NKO\tκαι (kai)\tand\tG2532=CONJ\tκαί=and\tNA28+NA27+Tyn+SBL+WH+Treg+TR+Byz\n"
 
 func setup(t *testing.T) *sql.DB {
 	t.Helper()
@@ -74,10 +81,11 @@ func TestLoadSkipsHeaderAndPreviewBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	// 4 real data rows (Mat.1.1#01, #02, Mat.4.6#26, Jhn.1.1#02); Mark.1.1#01
-	// is not in the mini spine and must be skipped, not inserted.
-	if inserted != 4 {
-		t.Errorf("inserted = %d, want 4", inserted)
+	// 5 real data rows (Mat.1.1#01, #02, Mat.4.6#26, Jhn.1.1#02,
+	// Jhn.1.2(1.3)#01); Mark.1.1#01 is not in the mini spine and must be
+	// skipped, not inserted.
+	if inserted != 5 {
+		t.Errorf("inserted = %d, want 5", inserted)
 	}
 	if skipped != 1 {
 		t.Errorf("skipped = %d, want 1 (Mark.1.1 not in mini spine)", skipped)
@@ -88,8 +96,27 @@ func TestLoadSkipsHeaderAndPreviewBlocks(t *testing.T) {
 
 	var rows int
 	db.QueryRow(`SELECT COUNT(*) FROM words`).Scan(&rows)
-	if rows != 4 {
-		t.Errorf("words table has %d rows, want 4", rows)
+	if rows != 5 {
+		t.Errorf("words table has %d rows, want 5", rows)
+	}
+}
+
+func TestLoadToleratesDualNumberedRef(t *testing.T) {
+	db := setup(t)
+	if _, _, _, err := tagnt.Load(db, strings.NewReader(fixtureTAGNT)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var ch, v int
+	err := db.QueryRow(`
+		SELECT verse.chapter, verse.verse FROM words w
+		JOIN verses verse ON verse.id = w.verse_id
+		WHERE w.source_locator = 'Jhn.1.2(1.3)#01=NKO'`).Scan(&ch, &v)
+	if err != nil {
+		t.Fatalf("query Jhn.1.2(1.3)#01: %v (the row was silently dropped)", err)
+	}
+	if ch != 1 || v != 2 {
+		t.Errorf("resolved to %d:%d, want 1:2 (the English/standard number outside the parens)", ch, v)
 	}
 }
 

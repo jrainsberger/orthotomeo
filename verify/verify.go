@@ -73,8 +73,8 @@ var DefaultExpectations = []CountExpectation{
 	{"ASV verse_text", sourceCount("verse_text"), []any{"ASV"}, 31102},
 	{"WEB verse_text", sourceCount("verse_text"), []any{"WEB"}, 31095},
 	{"Brenton verse_text", sourceCount("verse_text"), []any{"Brenton"}, 22690},
-	{"TAGNT words", sourceCount("words"), []any{"TAGNT"}, 141720},
-	{"TAHOT words", sourceCount("words"), []any{"TAHOT"}, 283734},
+	{"TAGNT words", sourceCount("words"), []any{"TAGNT"}, 141746},
+	{"TAHOT words", sourceCount("words"), []any{"TAHOT"}, 305174},
 	{"Swete words", sourceCount("words"), []any{"Swete"}, 476937},
 	{"OSS words", sourceCount("words"), []any{"OSS-LXX-lemma"}, 425299},
 }

@@ -35,9 +35,10 @@ T8 (WEB text, 31,095/31,102 - 7 documented textual-critical divergences),
 T9 (Brenton LXX, 22,690 verses / 920 chapter files, its own `versification='lxx-brenton'` -
 not forced onto the KJV spine; canonical correspondence is the separate deterministic
 T4b aligner, not a load-time mapping),
-T10 (TAGNT, 141,720 words across both Greek-NT TSVs, 0 unresolved verses),
-T11 (TAHOT, 283,734 words across all four Hebrew-OT TSVs, 0 unresolved verses -
-Hebrew prefix+root words resolved to the root per invariant #5),
+T10 (TAGNT, 141,746 words across both Greek-NT TSVs, 0 unresolved verses),
+T11 (TAHOT, 305,174 words across all four Hebrew-OT TSVs, 478 documented skips
+(Psalm-title verses with no English/standard counterpart) - Hebrew prefix+root
+words resolved to the root per invariant #5),
 T12 (Swete LXX, 476,937 words, its own `versification='lxx-swete'`, surface-only
 - no lemma/dstrong/morph, Swete carries none),
 T13 (OSS LXX lemma, 425,299 words across 34 in-scope books, its own
@@ -53,8 +54,17 @@ T14 (completeness self-test: `verify` package + `cmd/build --verify`, making
 invariant #3 enforceable - source_id/FK integrity, full-canon book coverage,
 lemma-count read-agreement, and known per-edition totals, each proven against
 a deliberately corrupted fixture. Running it for real found and fixed a
-genuine TAHOT `morph_code` parsing bug - see PLAN.md's T14 "AS-BUILT" notes).
-Phase 3 (text/word import), T4b, and T14 are now complete. Next: T15
-(Citation + reference resolution, Phase 5's foundation). See PLAN.md's
-T4/T14 "DECISION"/"AS-BUILT" blocks for the full per-edition-versification,
-aligner, and verify design.
+genuine TAHOT `morph_code` parsing bug - see PLAN.md's T14 "AS-BUILT" notes),
+T15 (Citation + reference resolution: `retriever` package - `ResolveRef`,
+`GetVerse`, `GetPassage` - guaranteeing cross-edition divergence is always a
+`Caveat`, never a silent shift. Smoke-testing it against the real DB found a
+second, much larger silent-drop bug: both T10 and T11's loaders dropped every
+row whose ref carried STEPBible's `(EditionChapter.EditionVerse)` cross-
+reference suffix, undetected by any counter - 26 TAGNT rows, 21,440 TAHOT
+rows (nearly all of Psalms, where the Hebrew title-as-verse-1 convention
+triggers the suffix on almost every verse). Fixed in both loaders; see
+PLAN.md's T10/T11 UPDATE and T15 "AS-BUILT" notes).
+Phase 3 (text/word import), T4b, T14, and T15 are now complete. Next: T16
+(concordance - the killer feature). See PLAN.md's T4/T14/T15
+"DECISION"/"AS-BUILT" blocks for the full per-edition-versification, aligner,
+verify, and retriever design.

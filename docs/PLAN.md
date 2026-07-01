@@ -678,7 +678,7 @@ lettered addition-verse parts merged correctly in letter order.
 
 # Phase 4 - Integrity
 
-### T14 - completeness self-test  `BLOCKED` on T10-T13
+### T14 - completeness self-test  `DONE`
 **Goal:** make invariant #3 enforceable, not aspirational.
 **Scope:** a `verify` package + `cmd/build --verify` (or a `go test` integration tag)
 that asserts over a freshly built DB:
@@ -689,6 +689,73 @@ that asserts over a freshly built DB:
 - known per-edition verse totals match documented expectations.
 **Acceptance:** the suite passes on a full build and fails loudly when a row is dropped
 (prove with a deliberately corrupted fixture).
+
+---
+
+### T14 AS-BUILT (2026-06-30)
+
+Shipped as the `verify` package (`Run(db, expectations) (Report, error)`) plus a
+`cmd/build --verify` flag that runs it after a build and exits non-zero on failure.
+`Report` separates hard `Issues` (fail the build) from informational `Notes` (small,
+documented, pre-existing gaps that are reported but not failures) - matching invariant
+#9's "surface the disagreement as data, don't smooth it over."
+
+Checks implemented, each independently testable (see `verify/verify_test.go`, all five
+tests corrupt a clean fixture and assert the loud failure the acceptance criterion
+requires):
+- `checkSourceIDs` - `words`/`verse_text` rows with a NULL `source_id` (belt-and-suspenders
+  over the schema's own `NOT NULL`).
+- `checkForeignKeys` - runs SQLite's own `PRAGMA foreign_key_check` over the whole DB, a
+  second independent pass distinct from the insert-time `PRAGMA foreign_keys=ON` in
+  `store.Open`.
+- `checkBookCoverage` - for the sources documented as full-canon (KJV/ASV/WEB verse_text,
+  TAGNT words over all 27 nt books, TAHOT words over all 39 ot books), asserts every book
+  has at least one row. Brenton/Swete/OSS are edition-scoped subsets by design (T9/T12/T13)
+  and are intentionally NOT held to full-canon coverage here.
+- `checkLemmaAgreement` - T15/T16 (`ConcordLemma`/`Count`) don't exist yet, so this checks
+  the same failure mode one level down: for a deterministic sample of `dstrong`s actually
+  present (`ORDER BY dstrong LIMIT 25`, not random - invariant #9), an aggregate
+  `COUNT(*)` must agree with a full row-scan count for the identical `WHERE` clause. Once
+  T16 exists, that ticket should extend (not replace) this with the real `Concord`
+  functions.
+- `checkDstrongMorphResolution` - `words.dstrong`/`morph_code` are intentionally plain
+  TEXT, not hard FKs (T10/T11 doc). Counts DISTINCT unresolved values (not row
+  occurrences - one bad term can tag hundreds of word instances) against
+  `lexicon`/`morph_codes`; up to `maxKnownDstrongGap` (40) is a Note, more is a failing
+  Issue.
+- `checkCounts` - `DefaultExpectations` records the real full-build totals (verses,
+  cross_references, lexicon, morph_codes, and each edition's verse_text/words count) so a
+  future dropped row shrinks a number and fails loudly instead of silently passing.
+
+**A real bug T14 found and fixed (not curation - a general, deterministic parsing fix):**
+running `--verify` against the real corpus surfaced 109,026 TAHOT `words` rows whose
+`morph_code` didn't resolve against `morph_codes` (T6/TEHMC), while TAGNT was clean. Direct
+corpus audit (all four TAHOT TSVs) showed the cause: TAHOT's Grammar column states the H
+(Hebrew)/A (Aramaic) language marker exactly once, on the first `"/"`-segment of a
+multi-segment field (e.g. `HR/Ncfsa` for a prefix+root word) - never restated on a later
+segment (confirmed: 0 of 152,022 later segments start with `H`). `tahot.go`'s `rootFields`
+picked the root's segment positionally but never re-attached that marker, so a root at
+`idx>0` (the common case for any prefixed word) produced a bare code like `Ncfsa` that
+TEHMC's own table only ever stores as `HNcfsa`. Fixed with a new `withLanguagePrefix`
+helper that unconditionally prepends segment 0's language letter to any later segment
+(an earlier draft tried to skip re-prefixing when the later segment "already looked
+prefixed" - that was itself a second bug, since TEHMC's Adjective POS letter is also `A`,
+so an unprefixed Adjective code like `Aampa` was misread as an already-Aramaic-prefixed
+code; corpus audit confirmed 0 real re-prefixed later segments exist, so the rule is
+unconditional, not conditional). After the fix, 0 TAHOT rows are morph-unresolved; a
+table-driven unit test (`tahot/morphprefix_test.go`) pins both the Hebrew/Aramaic and the
+Adjective-ambiguity cases. This is a parsing correctness fix discovered by a mechanical,
+general completeness check - not per-verse hand-curation.
+
+The `dstrong` gap is genuine, small, and matches T10's already-documented figure exactly
+once measured correctly (by distinct term, not row count): 5 distinct TAGNT dStrongs (T10's
+documented number) + 20 distinct TAHOT dStrongs absent from lexicon, reported as a Note.
+
+**Validated real-build Counts (2026-06-30, run twice, byte-identical):**
+```
+verify NOTE [dstrong_resolution]: 25 distinct dstrong values are absent from lexicon (within documented gap)
+verify: OK (all completeness checks passed)
+```
 
 ---
 
@@ -776,15 +843,15 @@ label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 ## Dependency summary
 
 ```
-DONE: T1 -> T2 -> T3, T4a, T4b, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T13, T21
+DONE: T1 -> T2 -> T3, T4a, T4b, T5 -> T6, T7 -> T8, T9, T10, T11, T12, T13, T14, T21
 T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (OSS, DONE)
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
-T10-T13 -> T14 -> Phase 5 (T15..T19) -> T20
+T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15..T19) -> T20
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T14** (integrity - the complete-or-fail
-self-test over T10-T13's words rows and T4b's verse_alignment), then Phase 5 and
-6. All of Phase 3 (text/word import) and T4b are now DONE.
+Recommended next executable order: **T15** (Citation + reference resolution,
+Phase 5's foundation), then T16-T19, then Phase 6 (T20). All of Phase 3 (text/word
+import), T4b, and T14 are now DONE.

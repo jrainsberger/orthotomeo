@@ -48,8 +48,13 @@ T4b (deterministic verse aligner: chapter-level alignment by verse COUNT
 - never verse-number label matching; no TVTMS rule engine, no hand-curation, no
 LLM - invariant #9. One documented limitation: a within-chapter leading-title
 insertion's exact position is underdetermined by counts alone, reported as
-low-confidence rather than guessed; see PLAN.md's T4b "AS-BUILT" notes).
-Phase 3 (text/word import) and T4b are now complete. Next: T14 (the
-complete-or-fail integrity self-test over T10-T13's words and T4b's
-verse_alignment). See PLAN.md's T4 "DECISION"/"AS-BUILT" blocks for the full
-per-edition-versification and aligner design.
+low-confidence rather than guessed; see PLAN.md's T4b "AS-BUILT" notes),
+T14 (completeness self-test: `verify` package + `cmd/build --verify`, making
+invariant #3 enforceable - source_id/FK integrity, full-canon book coverage,
+lemma-count read-agreement, and known per-edition totals, each proven against
+a deliberately corrupted fixture. Running it for real found and fixed a
+genuine TAHOT `morph_code` parsing bug - see PLAN.md's T14 "AS-BUILT" notes).
+Phase 3 (text/word import), T4b, and T14 are now complete. Next: T15
+(Citation + reference resolution, Phase 5's foundation). See PLAN.md's
+T4/T14 "DECISION"/"AS-BUILT" blocks for the full per-edition-versification,
+aligner, and verify design.

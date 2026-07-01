@@ -23,6 +23,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/swetewords"
 	"github.com/jrainsberger/orthotomeo/tagnt"
 	"github.com/jrainsberger/orthotomeo/tahot"
+	"github.com/jrainsberger/orthotomeo/verify"
 	"github.com/jrainsberger/orthotomeo/versealign"
 	"github.com/jrainsberger/orthotomeo/verses"
 	"github.com/jrainsberger/orthotomeo/versetext"
@@ -37,14 +38,15 @@ func main() {
 	// each root in turn, so either tree may also be symlinked under the other.
 	root := flag.String("corpus", `D:/Claude/Bible`, "corpus root (bible-text, cross_references.txt)")
 	reference := flag.String("reference", `D:/Reference`, "reference root (STEPBible-Data, LXX-Swete-1930)")
+	doVerify := flag.Bool("verify", false, "run the T14 completeness self-test after building; exit non-zero on any failure")
 	flag.Parse()
 
-	if err := run(*out, *root, *reference); err != nil {
+	if err := run(*out, *root, *reference, *doVerify); err != nil {
 		log.Fatalf("build: %v", err)
 	}
 }
 
-func run(out, root, reference string) error {
+func run(out, root, reference string, doVerify bool) error {
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
@@ -121,6 +123,32 @@ func run(out, root, reference string) error {
 	if err := alignAllEditions(db); err != nil {
 		return err
 	}
+
+	if doVerify {
+		return runVerify(db)
+	}
+	return nil
+}
+
+// runVerify runs the T14 completeness self-test (invariant #3) against the
+// just-built DB and reports every issue before returning an error - a
+// verify failure means the build produced something wrong, so it is
+// reported loudly rather than silently accepted.
+func runVerify(db *sql.DB) error {
+	report, err := verify.Run(db, verify.DefaultExpectations)
+	if err != nil {
+		return fmt.Errorf("verify: %w", err)
+	}
+	for _, n := range report.Notes {
+		fmt.Printf("verify NOTE [%s]: %s\n", n.Check, n.Detail)
+	}
+	if !report.OK() {
+		for _, iss := range report.Issues {
+			fmt.Printf("verify FAIL [%s]: %s\n", iss.Check, iss.Detail)
+		}
+		return fmt.Errorf("verify: %d issue(s) found", len(report.Issues))
+	}
+	fmt.Println("verify: OK (all completeness checks passed)")
 	return nil
 }
 

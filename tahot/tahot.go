@@ -144,7 +144,7 @@ func rootFields(dstrongsField, grammarField, expandedField string) (dstrong, mor
 
 	gParts := strings.Split(grammarField, "/")
 	if idx < len(gParts) {
-		morphCode = sql.NullString{String: gParts[idx], Valid: true}
+		morphCode = sql.NullString{String: withLanguagePrefix(gParts, idx), Valid: true}
 	}
 
 	eParts := strings.Split(expandedField, "/")
@@ -160,4 +160,31 @@ func rootFields(dstrongsField, grammarField, expandedField string) (dstrong, mor
 	}
 
 	return dstrong, morphCode, lemma, dstrong.Valid
+}
+
+// withLanguagePrefix returns gParts[idx], re-attaching the H (Hebrew) or A
+// (Aramaic) language marker when idx isn't the first "/"-segment. TAHOT's
+// Grammar column carries that marker exactly once, on segment 0 - confirmed
+// by direct corpus audit of all four TAHOT files: a later ("/"-index > 0)
+// segment NEVER itself starts with 'H' (0 occurrences across 152,022 later
+// segments), and every apparent "A..." later segment is the POS letter for
+// Adjective (e.g. "Acmsc", "Aampa"), not a re-stated Aramaic marker - so the
+// prefix must always be prepended unconditionally, never conditionally. The
+// T6 TEHMC morph_codes table's own codes are always prefixed (e.g.
+// "HNcfsa"), so an un-prefixed later segment like "Ncfsa" would silently
+// fail to resolve there without this.
+func withLanguagePrefix(gParts []string, idx int) string {
+	code := gParts[idx]
+	if idx == 0 || code == "" {
+		return code
+	}
+	prefix := gParts[0]
+	if prefix == "" {
+		return code
+	}
+	lang := prefix[0]
+	if lang != 'H' && lang != 'A' {
+		return code
+	}
+	return string(lang) + code
 }

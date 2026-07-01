@@ -104,8 +104,8 @@ func TestLoadExtractsRootNotPrefix(t *testing.T) {
 	if dstrong != "H7225G" {
 		t.Errorf("dstrong = %q, want H7225G (the braced root, not the H9003 prefix)", dstrong)
 	}
-	if morphCode != "Ncfsa" {
-		t.Errorf("morph_code = %q, want Ncfsa (positionally matched to the root)", morphCode)
+	if morphCode != "HNcfsa" {
+		t.Errorf("morph_code = %q, want HNcfsa (positionally matched to the root, with the Grammar field's H language marker - present only on segment 0 in the source - re-attached so it matches TEHMC's own code table)", morphCode)
 	}
 	if lemma != "רֵאשִׁית" {
 		t.Errorf("lemma = %q, want רֵאשִׁית", lemma)

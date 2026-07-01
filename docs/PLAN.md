@@ -870,13 +870,65 @@ would have caught this without needing T15 to stumble into it. Recorded as a T14
 follow-up, not built now - scope discipline: T15's job was the retriever, not
 re-opening T14.
 
-### T16 - concordance (the killer feature)  `BLOCKED` on T15
+### T16 - concordance (the killer feature)  `DONE`
 `ConcordLemma(lemma|dstrong)`, `ConcordPhrase(tokens, {adjacent|window:N})`, `Count`.
 **Complete-or-fail**: return every matching word row or raise. `Count` and `Concord`
 over the same query MUST agree (built-in completeness check).
 **Acceptance:** `ConcordLemma(G0859)` returns all aphesis rows incl. the Matt 26:28
 control case; `ConcordPhrase(["eis","aphesis"], adjacent)` returns the full NT set;
 `Count == len(Concord)` for every tested query; a forced partial read raises.
+
+### T16 AS-BUILT (2026-06-30)
+
+Shipped as the `concord` package: `ConcordLemma`, `ConcordPhrase`, `Count`, all
+returning/tallying `retriever.Citation`/`Tally` over one `corpus` (a sources.code
+restricted to the four word-tagged sources: TAGNT, TAHOT, Swete, OSS-LXX-lemma -
+KJV/ASV/WEB/Brenton carry verse_text, not words, and are rejected with a clear error
+rather than silently returning zero matches).
+
+**`lemma | strongs` auto-detection:** `ConcordLemma`'s single `query` argument is
+classified by shape (`^[GH]\d{2,5}[A-Za-z]{0,2}$` = dStrong, e.g. `G0859`; anything
+else = a literal `lemma` match) rather than a second parameter - matches the spec's
+`ConcordLemma(lemma | strongs, corpus)` signature exactly. Verified both paths return
+the identical set for the same underlying word (`ConcordLemma("G0859", "TAGNT")` and
+`ConcordLemma("ἄφεσις", "TAGNT")` agree).
+
+**Complete-or-fail, concretely:** both `ConcordLemma` and `ConcordPhrase` run an
+independent `COUNT(*)` before scanning rows, then call `checkComplete` to compare the
+counted total against what was actually scanned - a real driver-level partial read
+(not just "zero matches", which is a legitimate answer) raises instead of returning a
+truncated slice. `Count` shares the identical `WHERE` clause, so `Count(...).Total ==
+len(ConcordLemma(...))` holds by construction; `checkComplete`'s guard logic itself is
+unit-tested directly (`concord/complete_test.go`) since forcing a real SQLite driver
+to truncate mid-scan isn't a reproducible test scenario - the guard existing and
+firing correctly on disagreement is what's provable and proven.
+
+**`ConcordPhrase`'s window semantics:** one `window int` parameter, not a separate
+adjacent/window mode - `window=0` means strictly adjacent (consecutive `word_no`,
+the spec's `{adjacent}` case), `window=N` allows up to `N` intervening words. Phrase
+matching never crosses a verse boundary (`word_no` is verse-relative in the source
+data itself - T10/T11's own package docs). Ties are broken deterministically: the
+nearest subsequent token match is taken, not enumerated as multiple branches.
+
+**Two edition-reaching strategies, reused from T15:** canonical-keyed corpora
+(TAGNT/TAHOT) attach a word's own verse chapter/verse directly as the Citation's
+`Ref`. Alignment-keyed corpora (Swete/OSS-LXX-lemma) resolve `Ref` through T4b's
+`verse_alignment` (`retriever.IsAlignmentKeyed`, exported from T15 for this reuse) -
+`exact` relations get `Confidence:High`, anything else gets `Confidence:Flagged` with
+a `Caveat` naming the relation, and a `merge`-target edition verse (multiple canonical
+verses collapsing into one edition verse) picks the first canonical verse
+deterministically and says so in the `Caveat`, since word-level alignment (T22) that
+would resolve which canonical verse a given WORD belongs to doesn't exist yet and
+isn't guessed at - the same "report low-confidence, don't guess" discipline as T4b's
+own residual limitation.
+
+**Validated against the real DB, matching the spec's own worked example (§6) exactly:**
+`ConcordLemma("G0859", "TAGNT")` returns **17** citations (the spec's own stated
+count) including `MAT.26.28` (the control case: Christ's blood poured out εἰς ἄφεσιν -
+a causal "because of" reading is structurally impossible there); `Count("G0859",
+"TAGNT").Total == 17` agrees. `ConcordPhrase(["εἰς","ἄφεσις"], "TAGNT", 0)` (adjacent)
+returns 5 matches: `Mat.26.28`, `Mrk.1.4`, `Luk.3.3`, `Act.2.38`, `Luk.24.47` - the
+full adjacent-occurrence set.
 
 ### T17 - parse / lemmatize  `BLOCKED` on T15
 `Parse(ref, word?)` (dstrong + expanded morph), `Lemmatize(ref)` (ordered lemma list).
@@ -1026,14 +1078,15 @@ T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (O
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
-T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, DONE ..T19)
+T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, T16 DONE ..T19)
 Phase 5 (T15..T19) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T16** (concordance, the killer feature),
-then T17-T19, then **T25** (the facade/seam), then the transports fan out cheaply
-from it: **T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local web
-UI) in parallel, then **T20** (MCP) and **T28** (Fyne desktop launcher). All of
-Phase 3 (text/word import), T4b, T14, and T15 are now DONE.
+Recommended next executable order: **T17** (parse/lemmatize), then **T18**
+(attestation), then **T19** (Cite renderer), then **T25** (the facade/seam), then
+the transports fan out cheaply from it: **T26** (CLI - also the seam's smoke test)
+and **T27** (HTTP + local web UI) in parallel, then **T20** (MCP) and **T28** (Fyne
+desktop launcher). All of Phase 3 (text/word import), T4b, T14, T15, and T16 are
+now DONE.

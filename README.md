@@ -63,8 +63,16 @@ row whose ref carried STEPBible's `(EditionChapter.EditionVerse)` cross-
 reference suffix, undetected by any counter - 26 TAGNT rows, 21,440 TAHOT
 rows (nearly all of Psalms, where the Hebrew title-as-verse-1 convention
 triggers the suffix on almost every verse). Fixed in both loaders; see
-PLAN.md's T10/T11 UPDATE and T15 "AS-BUILT" notes).
-Phase 3 (text/word import), T4b, T14, and T15 are now complete. Next: T16
-(concordance - the killer feature). See PLAN.md's T4/T14/T15
-"DECISION"/"AS-BUILT" blocks for the full per-edition-versification, aligner,
-verify, and retriever design.
+PLAN.md's T10/T11 UPDATE and T15 "AS-BUILT" notes),
+T16 (concordance - the killer feature: `concord` package - `ConcordLemma`,
+`ConcordPhrase`, `Count` - complete-or-fail over the built DB, each raising
+rather than returning a silently truncated result if an independent
+`COUNT(*)` and a full row scan ever disagree. Validated against the real DB
+exactly matching the Concord spec's own worked example: `ConcordLemma`
+returns all 17 ἄφεσις rows including the Matt 26:28 control case;
+`ConcordPhrase(["εἰς","ἄφεσις"], adjacent)` returns the full 5-occurrence
+NT set - see PLAN.md's T16 "AS-BUILT" notes).
+Phase 3 (text/word import), T4b, T14, T15, and T16 are now complete. Next:
+T17 (parse/lemmatize). See PLAN.md's T4/T14/T15/T16 "DECISION"/"AS-BUILT"
+blocks for the full per-edition-versification, aligner, verify, retriever,
+and concordance design.

@@ -124,6 +124,21 @@ var allEditions = map[string]editionInfo{
 
 var editionOrder = []string{"KJV", "ASV", "WEB", "Brenton", "TAGNT", "TAHOT", "Swete", "OSS-LXX-lemma"}
 
+// IsAlignmentKeyed reports whether sourceCode's verse rows are reached only
+// through T4b's verse_alignment (true - Brenton/Swete/OSS) or share the
+// canonical verses spine directly (false - KJV/ASV/WEB/TAGNT/TAHOT). known
+// is false for a sourceCode this package doesn't recognize as a per-verse
+// content edition. Exported so other Phase 5 tickets (T16 concordance) that
+// also need to map a words/verse_text row back to a canonical Ref don't
+// have to re-derive this table.
+func IsAlignmentKeyed(sourceCode string) (alignmentKeyed, known bool) {
+	info, ok := allEditions[sourceCode]
+	if !ok {
+		return false, false
+	}
+	return info.alignment, true
+}
+
 // ResolveRef reports, for every per-verse content edition, whether ref has
 // a counterpart there and where - never silently omitting an edition that
 // lacks one (Concord spec §3: "the analysis is never handed a silently-

@@ -930,9 +930,56 @@ a causal "because of" reading is structurally impossible there); `Count("G0859",
 returns 5 matches: `Mat.26.28`, `Mrk.1.4`, `Luk.3.3`, `Act.2.38`, `Luk.24.47` - the
 full adjacent-occurrence set.
 
-### T17 - parse / lemmatize  `BLOCKED` on T15
+### T17 - parse / lemmatize  `DONE`
 `Parse(ref, word?)` (dstrong + expanded morph), `Lemmatize(ref)` (ordered lemma list).
 **Acceptance:** Parse returns morph_code expansion via T6; LXX parse flagged (Swete has none).
+
+### T17 AS-BUILT (2026-06-30)
+
+Shipped as the `parse` package: `Parse(db, ref, word *int, corpus)` and
+`Lemmatize(db, ref, corpus)`, both over the same four word-tagged corpora as T16
+(reusing `retriever.IsWordCorpus`/`IsAlignmentKeyed` - no third copy of that table).
+`word` is a `*int` (nil = every word in the verse, non-nil = one 1-based `word_no`),
+matching the spec's `word?` optional-argument shape in an idiomatic Go way.
+
+**Morph expansion, concretely:** for each word, `morph_code` is looked up in T6's
+`morph_codes` table (scoped by corpus's language: `grc` for TAGNT/Swete/OSS, `he` for
+TAHOT) and `Citation.Grammar` is set to `"<code> (<description>)"` - both the raw
+code and its expansion, so nothing is lost by expanding it. An unresolved code (T14's
+documented small cross-file gap) falls back to the raw code alone, `Confidence:
+Flagged`, with a `Caveat` naming it as a known gap rather than a silent success.
+
+**"LXX parse flagged," concretely:** Swete carries no `morph_code` at all (T12,
+surface-only) and OSS-LXX-lemma carries no `morph_code` either (T13, lemma-only) - a
+word from either always comes back `Confidence:Flagged` with a `Caveat` naming
+exactly what that edition doesn't carry and why (not a generic "missing data"
+message). The word itself (surface or lemma, whichever the corpus actually has) is
+still returned - Parse never omits real data because ancillary data is absent.
+
+**Reused, not reinvented, T15/T16's alignment handling:** alignment-keyed corpora
+(Swete/OSS) resolve via `verse_alignment` the SAME direction T16's Parse-shaped case
+needed (canonical -> edition, not the reverse ambiguity T16's `ConcordLemma` had to
+navigate) - a canonical ref under a `divide` relation maps to multiple edition
+verses, and Parse correctly returns the union of all their words in order, each
+tagged with its own edition chapter/verse in the Caveat. A non-`exact` relation
+(`renumber`/`merge`/`divide`) is `Confidence:Flagged` regardless of morph
+availability, same discipline as T15/T16.
+
+**`Lemmatize` as a filtered view, not a separate query:** `Lemmatize(ref, corpus)`
+calls `Parse(ref, nil, corpus)` and returns only the Citations that carry a lemma -
+documented as intentional (a word truly has nothing to contribute to a lemma list
+without one, e.g. a TAGNT compound word, an untagged TAHOT Qere reading, or any
+Swete row), not a completeness violation of invariant #3 (which governs not dropping
+a MATCHING row, not inventing data that isn't there).
+
+**Validated against the real DB:** `Parse(MAT.26.28, nil, "TAGNT")` returns all 17
+words with full dStrong + expanded grammar (e.g. `N-ASF (Function=Noun; Case=
+Accusative; Number=Singular; Gender=Feminine)` for ἄφεσιν), all `Confidence:High`.
+`Lemmatize` on the same ref returns the ordered lemma list. `Parse(PSA.9.1, nil,
+"Swete")` returns real Greek words (Εἰς, τὸ, τέλος, ...) each `Confidence:Flagged`
+with a caveat naming BOTH the T4b `divide` relation AND Swete's lack of morph_code.
+`Parse(GEN.1.1, &3, "TAHOT")` resolves the third word's Hebrew morph_code cleanly
+(`HNcmpa`) via the Hebrew-language T6 table.
 
 ### T18 - attestation  `BLOCKED` on T15
 `Attestation(ref, word?)` -> the Type/Editions columns as neutral text-critical data
@@ -1078,15 +1125,15 @@ T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (O
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
-T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, T16 DONE ..T19)
+T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, T16, T17 DONE ..T19)
 Phase 5 (T15..T19) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T17** (parse/lemmatize), then **T18**
-(attestation), then **T19** (Cite renderer), then **T25** (the facade/seam), then
-the transports fan out cheaply from it: **T26** (CLI - also the seam's smoke test)
-and **T27** (HTTP + local web UI) in parallel, then **T20** (MCP) and **T28** (Fyne
-desktop launcher). All of Phase 3 (text/word import), T4b, T14, T15, and T16 are
-now DONE.
+Recommended next executable order: **T18** (attestation), then **T19** (Cite
+renderer), then **T25** (the facade/seam), then the transports fan out cheaply
+from it: **T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local
+web UI) in parallel, then **T20** (MCP) and **T28** (Fyne
+desktop launcher). All of Phase 3 (text/word import), T4b, T14, T15, T16, and
+T17 are now DONE.

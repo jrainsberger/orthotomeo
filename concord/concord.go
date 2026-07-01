@@ -21,16 +21,6 @@ type Tally struct {
 	ByBook map[string]int
 }
 
-// wordCorpora are the sources.code values that actually carry words rows -
-// the only valid `corpus` argument. KJV/ASV/WEB/Brenton carry verse_text,
-// not words, and are out of scope here (retriever.GetVerse's surface).
-var wordCorpora = map[string]bool{
-	"TAGNT":         true,
-	"TAHOT":         true,
-	"Swete":         true,
-	"OSS-LXX-lemma": true,
-}
-
 // dstrongRe recognizes a disambiguated Strong's number (e.g. "G0859",
 // "H7225G", "G3700H") as opposed to a plain lemma string - the shape every
 // dstrong value in the corpus actually takes (letter, 2-5 digits, up to 2
@@ -241,7 +231,7 @@ func checkComplete(op string, want, got int) error {
 }
 
 func validateCorpus(db *sql.DB, corpus string) (int64, error) {
-	if !wordCorpora[corpus] {
+	if !retriever.IsWordCorpus(corpus) {
 		return 0, fmt.Errorf("concord: %q is not a word-tagged corpus (want one of TAGNT, TAHOT, Swete, OSS-LXX-lemma)", corpus)
 	}
 	var id int64

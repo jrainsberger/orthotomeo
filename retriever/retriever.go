@@ -139,6 +139,16 @@ func IsAlignmentKeyed(sourceCode string) (alignmentKeyed, known bool) {
 	return info.alignment, true
 }
 
+// IsWordCorpus reports whether sourceCode carries word-tagged rows (the
+// `words` table) rather than continuous prose (`verse_text`) - the four
+// corpora T16 (concord), T17 (parse), and T18 (attestation) operate over:
+// TAGNT, TAHOT, Swete, OSS-LXX-lemma. Exported as the single source of
+// truth so those packages don't each maintain their own copy of this table.
+func IsWordCorpus(sourceCode string) bool {
+	info, ok := allEditions[sourceCode]
+	return ok && info.table == "words"
+}
+
 // ResolveRef reports, for every per-verse content edition, whether ref has
 // a counterpart there and where - never silently omitting an edition that
 // lacks one (Concord spec §3: "the analysis is never handed a silently-

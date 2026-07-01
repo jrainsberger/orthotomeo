@@ -71,8 +71,16 @@ rather than returning a silently truncated result if an independent
 exactly matching the Concord spec's own worked example: `ConcordLemma`
 returns all 17 ἄφεσις rows including the Matt 26:28 control case;
 `ConcordPhrase(["εἰς","ἄφεσις"], adjacent)` returns the full 5-occurrence
-NT set - see PLAN.md's T16 "AS-BUILT" notes).
-Phase 3 (text/word import), T4b, T14, T15, and T16 are now complete. Next:
-T17 (parse/lemmatize). See PLAN.md's T4/T14/T15/T16 "DECISION"/"AS-BUILT"
-blocks for the full per-edition-versification, aligner, verify, retriever,
-and concordance design.
+NT set - see PLAN.md's T16 "AS-BUILT" notes),
+T17 (parse/lemmatize: `parse` package - `Parse(ref, word?, corpus)` returns
+dStrong + T6-expanded morphology (e.g. `N-ASF (Function=Noun; Case=
+Accusative; Number=Singular; Gender=Feminine)`), `Lemmatize(ref, corpus)`
+the ordered lemma list. LXX corpora are always `Confidence:Flagged` with a
+caveat naming exactly what's missing (Swete: no morph at all - T12;
+OSS-LXX-lemma: same - T13) - the word itself is still returned, only the
+missing morphology is flagged, never the whole row silently dropped - see
+PLAN.md's T17 "AS-BUILT" notes).
+Phase 3 (text/word import), T4b, T14, T15, T16, and T17 are now complete.
+Next: T18 (attestation). See PLAN.md's T4/T14/T15/T16/T17
+"DECISION"/"AS-BUILT" blocks for the full per-edition-versification,
+aligner, verify, retriever, concordance, and parse design.

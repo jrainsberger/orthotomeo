@@ -117,10 +117,34 @@ built binary launched as a real subprocess exactly as an MCP host would
 (`tools/list` + `concord_lemma` over live stdio against the real corpus
 DB), and invalid-input rejection (`word=0` correctly reported as a tool
 error). See PLAN.md's T20 "AS-BUILT" notes).
-**Phase 5 (T15-T19) is fully complete, and T25/T20 close out the shared
-seam and its first live transport.**
-Phase 3 (text/word import), T4b, T14, all of Phase 5, T25, and T20 are
-done. Next: T26 (CLI adapter). See PLAN.md's
-T4/T14/T15/T16/T17/T18/T19/T25/T20 "DECISION"/"AS-BUILT" blocks for the
+**A second real bug was found through actual use via Claude Desktop** (T20
+UPDATE): every tool taking a required array argument (`get_verse`,
+`get_passage`, `concord_phrase`, `cite`) advertised a nullable-union schema
+type (`jsonschema-go`'s default for a Go slice field) that Claude's own MCP
+client doesn't parse - it silently treated the field as untyped and
+rejected a real array argument, with nothing catching it at server
+registration. Fixed with a `schemaFor[T]()` helper that collapses the union
+to a plain `"array"` type, wired in via each tool's `InputSchema` (bypassing
+`mcp.AddTool`'s automatic reflection). See PLAN.md's T20 UPDATE.
+T26 (CLI adapter: `cmd/orthotomeo`, four subcommands - `lookup`, `concord`,
+`parse`, `attest` - each a direct `engine.Engine` delegation, stdlib `flag`
+only. Text output by default (`engine.Cite`'s Markdown bullets, reusing
+T19's renderer), `--json` emits the same `citationsPayload` object shape
+`cmd/orthotomeo-mcp` already uses. Validated against the real DB matching
+T16's own worked example exactly: `orthotomeo concord --corpus TAGNT
+G0859` prints all 17 aphesis rows incl. the Matt 26:28 control case. See
+PLAN.md's T26 "AS-BUILT" notes).
+**A Unicode-normalization bug was found and fixed this session** (T10/T11/T13/T16
+UPDATEs): STEPBible's TAGNT source stores lemma text in a different Unicode
+form than a keyboard or LLM normally types (canonically equivalent, byte-
+different), so a lemma-text `concord_phrase` query could silently return
+zero rows for a real match. Fixed with a new `lexnorm` package (NFC
+normalization, applied at both the loaders and the concord query boundary)
+- see PLAN.md's T10 UPDATE for the full trace.
+**Phase 5 (T15-T19) is fully complete; T25, T20, and T26 close out the
+shared seam and two of its three transports.**
+Phase 3 (text/word import), T4b, T14, all of Phase 5, T25, T20, and T26
+are done. Next: T27 (HTTP + local web UI). See PLAN.md's
+T4/T14/T15/T16/T17/T18/T19/T25/T20/T26 "DECISION"/"AS-BUILT" blocks for the
 full per-edition-versification, aligner, verify, retriever, concordance,
-parse, attestation, cite, facade, and MCP design.
+parse, attestation, cite, facade, MCP, and CLI design.

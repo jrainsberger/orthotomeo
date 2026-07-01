@@ -557,6 +557,25 @@ all. 26 rows across both files (`Act.13.39(13.38)`, `Act.19.41(19.40)`,
 (what the loader already resolved against) is unchanged. New final: **141,746**
 words, still 0 skipped.
 
+**T10 UPDATE (2026-06-30, found via live `concord_phrase` testing over MCP):**
+STEPBible's TAGNT source stores lemma text in Greek Extended "oxia" accent form
+(e.g. U+1F77), not the ordinary monotonic "tonos" form (U+03AF) a keyboard or LLM
+normally produces - visually identical, byte-different, but canonically equivalent
+under Unicode NFC. `concord.ConcordPhrase`'s exact-match `lemma = ?` comparison
+silently returned zero rows for a real, adjacent, provably-correct phrase match
+(Mrk.16.16's βαπτισθεὶς σωθήσεται) whenever the query was typed in the tonos form -
+not an error, just an empty result indistinguishable from "doesn't occur." Fixed
+with a new `lexnorm` package (`lexnorm.NFC`, wrapping `golang.org/x/text/unicode/norm`,
+**approved dependency**) applied at two points: `dstrongLemma` normalizes `lemma`
+before it's stored (this loader), and `concord.ConcordLemma`/`Count`/`ConcordPhrase`
+normalize their query/token input before comparing. Both sides landing on the same
+NFC form is what makes the comparison work regardless of which form either side
+originally used. DB rebuilt with the fixed loader: same **141,746** words (a byte
+-normalization, not a row-count, fix). Regression tests in `concord/concord_test.go`
+(`TestConcordLemmaMatchesAcrossPolytonicAndMonotonicUnicodeForms`,
+`TestConcordPhraseMatchesAcrossPolytonicAndMonotonicUnicodeForms`) and
+`lexnorm/lexnorm_test.go` cover it directly.
+
 ### T11 - words: TAHOT (Hebrew OT)  `DONE`
 Same `words` shape, from `STEPBible-Data/.../TAHOT*.txt`. Hebrew morphology, Aramaic
 sections, **Ketiv/Qere** preserved (record both as data, do not collapse). Resolve book
@@ -615,6 +634,11 @@ individually-wrong answer (`Ps.9.1` "not present in TAHOT") during ordinary use,
 by a completeness assertion. Recorded as a known verify limitation, not fixed now
 (scope discipline - see the closing note under T15 below): `checkBookCoverage`
 currently proves no book is silently *empty*; it does not prove no *chapter* is.
+
+**T11 UPDATE (2026-06-30):** `rootFields`'s extracted lemma now passes through
+`lexnorm.NFC` before storage - same Unicode-normalization fix as T10's UPDATE above
+(Hebrew source text has its own analogous polytonic/precomposed accent-and-pointing
+variance); see T10's entry for the full rationale. Row counts unchanged.
 
 ### T12 - words: Swete LXX (Greek surface)  `DONE`
 Parse `LXX-Swete-1930/01-Swete_word_with_punctuations.csv` (index -> surface) +
@@ -710,6 +734,9 @@ Final: 425,299 words across the 34 in-scope books; 9,699 out-of-scope rows
 the independently-verified full-corpus count). Gen.1.1 lemma sequence
 spot-checked verbatim against the file (ἐν, ἀρχή, ποιέω, ...); Esther 1:1's 18
 lettered addition-verse parts merged correctly in letter order.
+
+**T13 UPDATE (2026-06-30):** each lemma passes through `lexnorm.NFC` before storage -
+same Unicode-normalization fix as T10's UPDATE. Row counts unchanged.
 
 ---
 
@@ -929,6 +956,23 @@ a causal "because of" reading is structurally impossible there); `Count("G0859",
 "TAGNT").Total == 17` agrees. `ConcordPhrase(["εἰς","ἄφεσις"], "TAGNT", 0)` (adjacent)
 returns 5 matches: `Mat.26.28`, `Mrk.1.4`, `Luk.3.3`, `Act.2.38`, `Luk.24.47` - the
 full adjacent-occurrence set.
+
+**T16 UPDATE (2026-06-30, found via live MCP `concord_phrase` testing against real
+scripture-study questions):** `ConcordLemma`/`Count`'s `query` and `ConcordPhrase`'s
+`tokens` are now passed through `lexnorm.NFC` before comparison, matching the
+now-NFC-normalized `words.lemma` column (T10/T11/T13 UPDATEs above). Before this fix,
+a lemma-text query typed in the ordinary monotonic Unicode form (what a keyboard or
+LLM produces) silently returned zero rows against the corpus's polytonic-accented
+storage form - not an error, and not distinguishable from a real "doesn't occur"
+result, which is exactly the kind of silent gap invariant #3 exists to prevent
+everywhere else. Confirmed live: `ConcordPhrase(["βαπτίζω","σῴζω"], "TAGNT", 40)`
+(typed in the ordinary tonos form) now correctly finds the sole NT verse where these
+two lemma families co-occur (Mrk.16.16, adjacent, `βαπτισθεὶς σωθήσεται`), and
+`ConcordPhrase(["σῴζω","βάπτισμα"], "TAGNT", 40)` finds the only other one
+(1Pe.3.21, `σῴζει βάπτισμα`) - both zero-result before the fix. Regression coverage:
+`concord/concord_test.go`'s `TestConcordLemmaMatchesAcrossPolytonicAndMonotonicUnicodeForms`
+/ `TestConcordPhraseMatchesAcrossPolytonicAndMonotonicUnicodeForms`, plus the new
+`lexnorm` package's own tests.
 
 ### T17 - parse / lemmatize  `DONE`
 `Parse(ref, word?)` (dstrong + expanded morph), `Lemmatize(ref)` (ordered lemma list).
@@ -1186,7 +1230,29 @@ Standing discipline carried forward from T25: future transports (T26 CLI, T27
 HTTP+web, T28 Fyne) must self-verify the same `engine`-only import constraint as
 they're written.
 
-### T26 - CLI adapter  `BLOCKED` on T25
+**T20 UPDATE (2026-07-01, found via real-world use through Claude Desktop):**
+`get_verse`, `get_passage`, `concord_phrase`, and `cite` each take a required Go
+slice argument (`Editions`/`Tokens`/`Citations []retriever.Citation`). `jsonschema-go`'s
+default reflected schema for a slice field is a nullable union - `"type": ["null",
+"array"]`, so a nil Go slice also validates - but the real MCP client this server
+was registered with (Claude Desktop/Code) doesn't parse a `"type"` that's an array of
+strings: it silently treated the property as untyped and rejected a real array
+argument, with no error at server-registration time to catch it (`mcp.AddTool` only
+panics on a structurally invalid schema, not a spec-valid one an external client
+happens not to support). Fixed with a new `schemaFor[T]()` helper (`tools.go`) that
+computes the reflected schema, then collapses any such union down to plain `"array"`
+- a required field never needs to also accept a literal JSON `null`, since `required`
+already demands the property be present with a real value - and wires the result in
+via each affected tool's `InputSchema` field (bypassing `mcp.AddTool`'s automatic
+reflection, which has no hook to customize it). Regression coverage:
+`TestArraySchemaFieldsAdvertiseArrayNotUnionType` in `mcp_test.go` asserts, over a
+real `ListTools` call (not just that our own SDK-based test client tolerates the
+union - it does, since it's the same library on both ends), that every one of these
+four properties advertises a plain string `"type":"array"` with `"items"` present -
+verified to fail with the pre-fix schema by temporarily reverting one `InputSchema`
+override and confirming the test catches it.
+
+### T26 - CLI adapter  `DONE`
 **Goal:** the thinnest human/scriptable surface, and the facade's first smoke test -
 if the CLI is awkward, the API is awkward.
 **Scope:** `cmd/orthotomeo` with subcommands over `engine`: `lookup <ref> [--edition]`,
@@ -1198,6 +1264,52 @@ read-only; never triggers a build.
 26:28 control) with citations; `--json` output is byte-identical to T27's for the same
 query; a forced partial read exits non-zero (complete-or-fail surfaces as an error,
 not a short list).
+
+### T26 AS-BUILT (2026-07-01)
+
+Shipped as `cmd/orthotomeo`: four subcommands (`lookup`, `concord`, `parse`,
+`attest`), each a direct delegation to one `engine.Engine` method, stdlib `flag`
+only - one `flag.NewFlagSet` per subcommand, dispatched by `os.Args[1]` in `main.go`.
+No cobra, no third-party CLI framework.
+
+**Text vs `--json` output, one shared path:** every Citation-bearing subcommand
+calls a single `emit` helper - default output is `engine.Cite(citations)` (Markdown
+bullets, reusing T19's renderer rather than building a second formatter), `--json`
+marshals a `citationsPayload{Citations []retriever.Citation}` wrapper. The wrapper
+(object, not a bare array) is the same shape `cmd/orthotomeo-mcp/tools.go`'s
+`citationsResult` already uses for the identical reason (MCP's object-typed-output
+constraint) - T27's HTTP JSON is specified to reuse this shape byte-for-byte, so
+fixing it here now means T27 has one less design decision to make, not a new one.
+
+**Ref syntax:** a small `parseRef` (`cmd/orthotomeo/ref.go`) parses the CLI's
+"BOOK.CHAPTER.VERSE" argument (e.g. `MAT.26.28`) into a `retriever.Ref` - the same
+dotted shape `retriever.Ref.String()` already produces, so a ref printed by one
+command round-trips as input to another. Book code is upper-cased for typing
+convenience; chapter/verse must be plain integers or the command errors out (not a
+guessed parse).
+
+**stdlib `flag` ordering caveat, worth documenting since it surprised manual
+testing:** flags must precede the positional argument (`concord --corpus TAGNT
+G0859`, not `concord G0859 --corpus TAGNT`) - `flag.Parse` stops interpreting `-`
+tokens once it hits the first non-flag argument. Not a bug, just how the stdlib
+package works; noted here so it isn't rediscovered as one later.
+
+**Complete-or-fail reaches the exit code, not just the error message:** every
+subcommand's `run*` function returns `error`; `main` is the only place that calls
+`os.Exit`, printing the error and exiting 1 - so an engine error (unknown corpus,
+malformed ref, a genuine partial-read failure) always surfaces as a non-zero exit,
+never a truncated success. Because `run*` returns rather than exits, the subcommand
+logic itself is directly unit-testable without a subprocess.
+
+**Validated against the real DB, matching the acceptance criterion exactly:**
+`orthotomeo concord --corpus TAGNT G0859` prints all 17 aphesis rows including
+`MAT.26.28` (the control case); `orthotomeo concord --corpus TAGNT --phrase
+"εἰς,ἄφεσις" --adjacent` reproduces the full 5-occurrence adjacent set
+(`Mat.26.28`, `Mrk.1.4`, `Luk.3.3`, `Act.2.38`, `Luk.24.47`) exactly matching T16's
+own worked example. `cmd/orthotomeo/orthotomeo_test.go` covers all four subcommands
+(text and `--json` modes), a missing-corpus error, a malformed ref, and a missing-DB
+open failure, using a real built fixture DB (no mocks) per the project's own
+testing convention.
 
 ### T27 - HTTP + local web UI  `BLOCKED` on T25
 **Goal:** the browser-facing seam. The browser renders polytonic Greek and RTL Hebrew
@@ -1289,12 +1401,12 @@ T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
 T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15-T19 ALL DONE)
-Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP DONE, T26 CLI, T27 HTTP+web}
+Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP DONE, T26 CLI DONE, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T26** (CLI - a smoke test of the
-facade, and the thinnest remaining transport) and **T27** (HTTP + local web
-UI), then **T28** (Fyne desktop launcher). All of Phase 3 (text/word
-import), T4b, T14, all of Phase 5 (T15-T19), T25, and T20 are now DONE.
+Recommended next executable order: **T27** (HTTP + local web UI - the last
+BLOCKED transport, unblocked since T25 is done), then **T28** (Fyne desktop
+launcher). All of Phase 3 (text/word import), T4b, T14, all of Phase 5
+(T15-T19), T25, T20, and T26 are now DONE.

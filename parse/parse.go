@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/jrainsberger/orthotomeo/retriever"
-	"github.com/jrainsberger/orthotomeo/verses"
 )
 
 // corpusLanguage maps a corpus to the morph_codes.language its morph_code
@@ -36,7 +35,7 @@ func Parse(db *sql.DB, ref retriever.Ref, word *int, corpus string) ([]retriever
 		return nil, fmt.Errorf("Parse: %q is not a word-tagged corpus (want one of TAGNT, TAHOT, Swete, OSS-LXX-lemma)", corpus)
 	}
 
-	targets, err := resolveTargets(db, ref, corpus)
+	targets, err := retriever.ResolveEditionVerses(db, ref, corpus)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +46,7 @@ func Parse(db *sql.DB, ref retriever.Ref, word *int, corpus string) ([]retriever
 
 	var cites []retriever.Citation
 	for _, tgt := range targets {
-		rows, err := wordsAt(db, tgt.verseID, corpus, word)
+		rows, err := wordsAt(db, tgt.VerseID, corpus, word)
 		if err != nil {
 			return nil, err
 		}
@@ -91,54 +90,6 @@ func Lemmatize(db *sql.DB, ref retriever.Ref, corpus string) ([]retriever.Citati
 	return out, nil
 }
 
-// target is one (verse_id, chapter, verse) this ref resolves to in corpus,
-// plus the T4b relation/confidence that got it there (relation="exact",
-// confidence=1.0 for a canonical-keyed corpus, where there's no alignment
-// step at all).
-type target struct {
-	verseID        int64
-	chapter, verse int
-	relation       string
-	confidence     float64
-}
-
-func resolveTargets(db *sql.DB, ref retriever.Ref, corpus string) ([]target, error) {
-	canonRes, err := verses.NewResolver(db, "usfm", verses.Canonical)
-	if err != nil {
-		return nil, err
-	}
-	canonicalID, err := canonRes.Resolve(fmt.Sprintf("%s.%d.%d", ref.Book, ref.Chapter, ref.Verse))
-	if err != nil {
-		return nil, fmt.Errorf("Parse %s: %w", ref, err)
-	}
-
-	alignmentKeyed, _ := retriever.IsAlignmentKeyed(corpus)
-	if !alignmentKeyed {
-		return []target{{verseID: canonicalID, chapter: ref.Chapter, verse: ref.Verse, relation: "exact", confidence: 1.0}}, nil
-	}
-
-	rows, err := db.Query(`
-		SELECT va.edition_verse_id, v.chapter, v.verse, va.relation, va.confidence
-		FROM verse_alignment va
-		JOIN verses v ON v.id = va.edition_verse_id
-		WHERE va.canonical_verse_id = ? AND va.source_id = (SELECT id FROM sources WHERE code = ?)
-		ORDER BY va.id`, canonicalID, corpus)
-	if err != nil {
-		return nil, fmt.Errorf("resolveTargets %s: %w", corpus, err)
-	}
-	defer rows.Close()
-
-	var targets []target
-	for rows.Next() {
-		var t target
-		if err := rows.Scan(&t.verseID, &t.chapter, &t.verse, &t.relation, &t.confidence); err != nil {
-			return nil, fmt.Errorf("resolveTargets scan: %w", err)
-		}
-		targets = append(targets, t)
-	}
-	return targets, rows.Err()
-}
-
 type wordRow struct {
 	wordNo                                                    int
 	surface, lemma, dstrong, morphCode, attestation, editions string
@@ -175,7 +126,7 @@ func wordsAt(db *sql.DB, verseID int64, corpus string, word *int) ([]wordRow, er
 	return out, rows.Err()
 }
 
-func buildCitation(db *sql.DB, ref retriever.Ref, corpus string, tgt target, w wordRow) (retriever.Citation, error) {
+func buildCitation(db *sql.DB, ref retriever.Ref, corpus string, tgt retriever.AlignedVerse, w wordRow) (retriever.Citation, error) {
 	file, err := sourceFile(db, corpus)
 	if err != nil {
 		return retriever.Citation{}, err
@@ -183,10 +134,10 @@ func buildCitation(db *sql.DB, ref retriever.Ref, corpus string, tgt target, w w
 
 	var caveats []string
 	confidence := retriever.ConfidenceHigh
-	if tgt.relation != "exact" {
+	if tgt.Relation != "exact" {
 		confidence = retriever.ConfidenceFlagged
 		caveats = append(caveats, fmt.Sprintf("T4b alignment: %s (confidence %.2f), not a 1:1 verse match - edition verse %s.%d.%d",
-			tgt.relation, tgt.confidence, ref.Book, tgt.chapter, tgt.verse))
+			tgt.Relation, tgt.Confidence, ref.Book, tgt.Chapter, tgt.Verse))
 	}
 
 	grammar := ""

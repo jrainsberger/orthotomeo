@@ -79,8 +79,18 @@ the ordered lemma list. LXX corpora are always `Confidence:Flagged` with a
 caveat naming exactly what's missing (Swete: no morph at all - T12;
 OSS-LXX-lemma: same - T13) - the word itself is still returned, only the
 missing morphology is flagged, never the whole row silently dropped - see
-PLAN.md's T17 "AS-BUILT" notes).
-Phase 3 (text/word import), T4b, T14, T15, T16, and T17 are now complete.
-Next: T18 (attestation). See PLAN.md's T4/T14/T15/T16/T17
-"DECISION"/"AS-BUILT" blocks for the full per-edition-versification,
-aligner, verify, retriever, concordance, and parse design.
+PLAN.md's T17 "AS-BUILT" notes),
+T18 (attestation: `attestation` package - `Attestation(ref, word?, corpus)`
+returns the WHNT-style Type/Editions manuscript-tradition columns as
+neutral data, no argument for or against a variant. Validated against the
+real DB matching the acceptance criterion exactly: every word in Mark
+16:9-20 is Type `KO`, reported `Confidence:High` with no caveat - a variant
+is data, not a defect. Extracted `retriever.ResolveEditionVerses` as a
+shared primitive during this ticket, the third one needing the same
+canonical-ref-to-edition-verse mapping - see PLAN.md's T18 "AS-BUILT"
+notes).
+Phase 3 (text/word import), T4b, T14, T15, T16, T17, and T18 are now
+complete. Next: T19 (Cite renderer - the last Phase 5 ticket). See PLAN.md's
+T4/T14/T15/T16/T17/T18 "DECISION"/"AS-BUILT" blocks for the full
+per-edition-versification, aligner, verify, retriever, concordance, parse,
+and attestation design.

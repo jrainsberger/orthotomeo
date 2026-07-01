@@ -981,9 +981,45 @@ with a caveat naming BOTH the T4b `divide` relation AND Swete's lack of morph_co
 `Parse(GEN.1.1, &3, "TAHOT")` resolves the third word's Hebrew morph_code cleanly
 (`HNcmpa`) via the Hebrew-language T6 table.
 
-### T18 - attestation  `BLOCKED` on T15
+### T18 - attestation  `DONE`
 `Attestation(ref, word?)` -> the Type/Editions columns as neutral text-critical data
 (e.g. Mark 16:9-20 = KO). No argument, just data.
+
+### T18 AS-BUILT (2026-06-30)
+
+Shipped as the `attestation` package: `Attestation(db, ref, word *int, corpus)`,
+same per-corpus/optional-word shape as T17's `Parse`. Populates only
+`Citation.Attestation` (the Type marker: `NKO`, `KO`, `Q(K)`, etc.) and
+`Citation.Editions` (`NA28+TR+Byz`-style edition list) - deliberately does NOT touch
+`Grammar`/morph expansion (that's T17's concern, kept separate so a caller asking
+purely "what manuscripts carry this word" isn't handed morphology noise).
+
+**No argument, just data, concretely:** a `KO` Type (Traditional/Other manuscripts,
+absent from the Nestlé-Aland base text - exactly Mark 16:9-20's real shape) is
+`Confidence:High` with no `Caveat` - the variant is neutral, reportable data, not a
+defect to flag. The only things that DO get flagged here are structural: a non-exact
+T4b alignment relation (same discipline as T15-T17), or a corpus that carries no
+attestation apparatus at all (Swete/OSS-LXX-lemma, T12/T13 - neither has a
+Greek-manuscript-tradition concept, so `attestation` is always empty by design; that
+absence is itself named in the `Caveat`, not silently returned as an empty string
+with no explanation).
+
+**A third Rule-of-Three extraction, done proactively:** T18 is the third ticket
+(after T15, T17) needing "map a canonical Ref to an edition's own verse(s) via T4b's
+verse_alignment, forward direction." Rather than write a fourth private copy,
+`retriever.ResolveEditionVerses`/`retriever.AlignedVerse` were extracted from T17's
+now-removed `parse.resolveTargets`/`parse.target` into `retriever.go` as the shared,
+exported primitive, and T17's `parse.go` was refactored to call it too (verified:
+all of T15-T17's existing tests still pass unchanged after the refactor). T15's own
+`GetVerse`/`ResolveRef` internals were deliberately left as-is - they predate this
+extraction and are already shipped/tested; refactoring them for symmetry alone was
+judged not worth the regression risk.
+
+**Validated against the real DB, matching the acceptance criterion exactly:**
+`Attestation(MRK.16.9, nil, "TAGNT")` and `Attestation(MRK.16.20, nil, "TAGNT")` -
+every word in both verses is Type `KO`, `Confidence:High`, no caveat. An ordinary
+verse (`MRK.1.1`) is predominantly `NKO` by contrast, confirming the distinction is
+real, not an artifact of the query.
 
 ### T19 - Cite renderer  `BLOCKED` on T15-T18
 `Cite([]Citation) -> string` in the `Teaching/Studies/*-references.md` format - the only
@@ -1125,15 +1161,15 @@ T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (O
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
-T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, T16, T17 DONE ..T19)
+T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, T16, T17, T18 DONE ..T19)
 Phase 5 (T15..T19) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T18** (attestation), then **T19** (Cite
-renderer), then **T25** (the facade/seam), then the transports fan out cheaply
+Recommended next executable order: **T19** (Cite renderer - the last Phase 5
+ticket), then **T25** (the facade/seam), then the transports fan out cheaply
 from it: **T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local
 web UI) in parallel, then **T20** (MCP) and **T28** (Fyne
-desktop launcher). All of Phase 3 (text/word import), T4b, T14, T15, T16, and
-T17 are now DONE.
+desktop launcher). All of Phase 3 (text/word import), T4b, T14, T15, T16, T17,
+and T18 are now DONE.

@@ -149,6 +149,64 @@ func IsWordCorpus(sourceCode string) bool {
 	return ok && info.table == "words"
 }
 
+// AlignedVerse is one edition verse a canonical Ref maps to via T4b's
+// verse_alignment (forward direction: canonical -> edition).
+type AlignedVerse struct {
+	VerseID        int64
+	Chapter, Verse int
+	Relation       string
+	Confidence     float64
+}
+
+// ResolveEditionVerses maps a canonical ref to every verse it corresponds
+// to in corpus: exactly one for a canonical-keyed corpus (Relation "exact",
+// Confidence 1.0 - there's no alignment step, the canonical verses row IS
+// corpus's row), zero or more for an alignment-keyed corpus via T4b's
+// verse_alignment - zero means no counterpart (edition-only content or an
+// unaligned gap), more than one means ref was T4b-divided into several
+// edition verses. This is the third ticket (T15, T17, T18) needing this
+// exact "reach an edition's own verse(s) from a canonical Ref" mapping, so
+// it's a shared, exported primitive rather than a fourth private copy.
+func ResolveEditionVerses(db *sql.DB, ref Ref, corpus string) ([]AlignedVerse, error) {
+	canonRes, err := verses.NewResolver(db, "usfm", verses.Canonical)
+	if err != nil {
+		return nil, err
+	}
+	canonicalID, err := canonRes.Resolve(ref.dotted())
+	if err != nil {
+		return nil, fmt.Errorf("ResolveEditionVerses %s: %w", ref, err)
+	}
+
+	alignmentKeyed, known := IsAlignmentKeyed(corpus)
+	if !known {
+		return nil, fmt.Errorf("ResolveEditionVerses: unknown corpus %q", corpus)
+	}
+	if !alignmentKeyed {
+		return []AlignedVerse{{VerseID: canonicalID, Chapter: ref.Chapter, Verse: ref.Verse, Relation: "exact", Confidence: 1.0}}, nil
+	}
+
+	rows, err := db.Query(`
+		SELECT va.edition_verse_id, v.chapter, v.verse, va.relation, va.confidence
+		FROM verse_alignment va
+		JOIN verses v ON v.id = va.edition_verse_id
+		WHERE va.canonical_verse_id = ? AND va.source_id = (SELECT id FROM sources WHERE code = ?)
+		ORDER BY va.id`, canonicalID, corpus)
+	if err != nil {
+		return nil, fmt.Errorf("ResolveEditionVerses %s: %w", corpus, err)
+	}
+	defer rows.Close()
+
+	var out []AlignedVerse
+	for rows.Next() {
+		var a AlignedVerse
+		if err := rows.Scan(&a.VerseID, &a.Chapter, &a.Verse, &a.Relation, &a.Confidence); err != nil {
+			return nil, fmt.Errorf("ResolveEditionVerses scan: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // ResolveRef reports, for every per-verse content edition, whether ref has
 // a counterpart there and where - never silently omitting an edition that
 // lacks one (Concord spec §3: "the analysis is never handed a silently-

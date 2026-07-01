@@ -98,10 +98,19 @@ analysis layer's job per the Concord spec, not a mechanical render).
 Validated chaining T16 straight through: `Cite(ConcordPhrase(["εἰς",
 "ἄφεσις"], "TAGNT", 0))` renders the full 5-occurrence adjacent set as five
 ready-to-paste bullets with real Greek text, lemma metadata, and exact
-source provenance - see PLAN.md's T19 "AS-BUILT" notes).
-**Phase 5 (T15-T19) is now fully complete.**
-Phase 3 (text/word import), T4b, T14, and all of Phase 5 are done. Next:
-T25 (the engine facade / shared seam, Phase 6's foundation). See PLAN.md's
-T4/T14/T15/T16/T17/T18/T19 "DECISION"/"AS-BUILT" blocks for the full
-per-edition-versification, aligner, verify, retriever, concordance, parse,
-attestation, and cite design.
+source provenance - see PLAN.md's T19 "AS-BUILT" notes),
+T25 (the `engine` facade - the single read-only seam every transport
+imports. `Open(dbPath)` opens the DB read-only in two independent layers
+(SQLite URI `mode=ro` + `PRAGMA query_only=ON`, both empirically confirmed
+to reject a write), then one method per Phase 5 operation, each a direct
+1:1 delegation. `Engine.db` is unexported with no accessor - no transport
+can reach a `*sql.DB` even by mistake. Validated against the real DB
+through the facade alone: `ConcordLemma("G0859","TAGNT")` and `Count` still
+agree at 17 - see PLAN.md's T25 "AS-BUILT" notes).
+**Phase 5 (T15-T19) is now fully complete, and T25 closes out its
+foundation for Phase 6.**
+Phase 3 (text/word import), T4b, T14, all of Phase 5, and T25 are done.
+Next: T20 (MCP surface). See PLAN.md's T4/T14/T15/T16/T17/T18/T19/T25
+"DECISION"/"AS-BUILT" blocks for the full per-edition-versification,
+aligner, verify, retriever, concordance, parse, attestation, cite, and
+facade design.

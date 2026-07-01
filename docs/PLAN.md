@@ -1072,7 +1072,7 @@ Every transport here is a thin adapter over the T25 facade. None owns query logi
 SQL, or completeness enforcement - that all lives in Phase 5. Build the seam (T25)
 first; MCP / CLI / HTTP / desktop then fall out cheaply and identically.
 
-### T25 - `engine` facade (the shared seam)  `BLOCKED` on Phase 5
+### T25 - `engine` facade (the shared seam)  `DONE`
 **Goal:** one read-only Go package that every transport imports - the single seam,
 so a front-end adds a UI, never a second copy of the query rules.
 **Scope:**
@@ -1088,6 +1088,41 @@ so a front-end adds a UI, never a second copy of the query rules.
 `Count(q) == len(Concord(q))` holds *through the facade* (not just under it); a write
 attempted on the opened DB fails; the package imports no transport and exposes no
 `*sql.DB`. A `grep` for `database/sql` or `store.` outside `engine`/loaders is empty.
+
+### T25 AS-BUILT (2026-06-30)
+
+Shipped as the `engine` package: `Open(dbPath) (*Engine, error)`, `Close()`, and one
+method per Phase 5 operation (`ResolveRef`, `GetVerse`, `GetPassage`, `ConcordLemma`,
+`ConcordPhrase`, `Count`, `Parse`, `Lemmatize`, `Attestation`, `Cite`), each a direct
+1:1 delegation to its Phase 5 function with `e.db` filled in. `Engine.db` is
+unexported and has no accessor - the type system, not just convention, prevents a
+transport from reaching a `*sql.DB`.
+
+**Read-only in two independent layers, confirmed empirically before writing the
+package (not assumed from docs):** the SQLite URI `mode=ro` parameter
+(`file:<path>?mode=ro`) refuses the connection outright if the file needs write
+access, and `PRAGMA query_only = ON` is a second, statement-level guard. Verified
+against the real corpus DB: an `INSERT` through either layer alone fails with
+`attempt to write a readonly database (8)`. `TestOpenRejectsWrites` (a white-box
+test in package `engine`, the only place that can legally reach the unexported `db`
+field) proves this holds through `Open`'s actual code path, not just the modernc.org/
+sqlite driver in isolation.
+
+**Acceptance validated:**
+- Every Phase-5 operation reachable through `engine` alone - `TestEngineReaches
+  EveryPhase5Operation` calls all ten.
+- `Count(q) == len(ConcordLemma(q))` holds through the facade -
+  `TestCountAgreesWithConcordLemmaThroughFacade`, and confirmed again against the
+  real DB (`ConcordLemma("G0859","TAGNT")` = 17, `Count(...).Total` = 17, both
+  reached only through `Engine`, never `retriever`/`concord` directly).
+- A write attempt fails - `TestOpenRejectsWrites`.
+- No `*sql.DB` escapes the package - enforced by Go's own unexported-field rule, not
+  a lint check.
+
+The `grep for database/sql or store. outside engine/loaders` acceptance line is a
+standing discipline for T20/T26/T27/T28 (none exist yet, so there's nothing to check
+today) rather than a test built here - each transport ticket must self-verify this as
+it's written, not defer it to a later audit.
 
 ### T20 - MCP surface  `BLOCKED` on T25
 Expose the `engine` facade tools over MCP (read-only). Natural-language queries are
@@ -1201,14 +1236,13 @@ T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
 T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15-T19 ALL DONE)
-Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
+Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP, T26 CLI, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T25** (the facade/seam - Phase 5 is now
-fully done and ready to wrap), then the transports fan out cheaply from it:
-**T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local web UI)
-in parallel, then **T20** (MCP) and **T28** (Fyne desktop launcher). All of
-Phase 3 (text/word import), T4b, T14, and all of Phase 5 (T15-T19) are now
-DONE.
+Recommended next executable order: **T20** (MCP - the seam is built, T20 is
+next per user direction), then **T26** (CLI - also a smoke test of the
+facade) and **T27** (HTTP + local web UI), then **T28** (Fyne desktop
+launcher). All of Phase 3 (text/word import), T4b, T14, all of Phase 5
+(T15-T19), and T25 are now DONE.

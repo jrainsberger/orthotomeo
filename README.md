@@ -106,11 +106,21 @@ to reject a write), then one method per Phase 5 operation, each a direct
 1:1 delegation. `Engine.db` is unexported with no accessor - no transport
 can reach a `*sql.DB` even by mistake. Validated against the real DB
 through the facade alone: `ConcordLemma("G0859","TAGNT")` and `Count` still
-agree at 17 - see PLAN.md's T25 "AS-BUILT" notes).
-**Phase 5 (T15-T19) is now fully complete, and T25 closes out its
-foundation for Phase 6.**
-Phase 3 (text/word import), T4b, T14, all of Phase 5, and T25 are done.
-Next: T20 (MCP surface). See PLAN.md's T4/T14/T15/T16/T17/T18/T19/T25
-"DECISION"/"AS-BUILT" blocks for the full per-edition-versification,
-aligner, verify, retriever, concordance, parse, attestation, cite, and
-facade design.
+agree at 17 - see PLAN.md's T25 "AS-BUILT" notes),
+T20 (MCP surface: `cmd/orthotomeo-mcp`, using the official
+`github.com/modelcontextprotocol/go-sdk` - ten tools, one per `Engine`
+method, none building SQL (`grep -rn "database/sql\|orthotomeo/store"
+cmd/orthotomeo-mcp/` is empty outside a doc comment). Validated three ways:
+an in-process client/server test suite (`Count == len(concord_lemma)` held
+across a real JSON round trip, not just in-process Go values), the actual
+built binary launched as a real subprocess exactly as an MCP host would
+(`tools/list` + `concord_lemma` over live stdio against the real corpus
+DB), and invalid-input rejection (`word=0` correctly reported as a tool
+error). See PLAN.md's T20 "AS-BUILT" notes).
+**Phase 5 (T15-T19) is fully complete, and T25/T20 close out the shared
+seam and its first live transport.**
+Phase 3 (text/word import), T4b, T14, all of Phase 5, T25, and T20 are
+done. Next: T26 (CLI adapter). See PLAN.md's
+T4/T14/T15/T16/T17/T18/T19/T25/T20 "DECISION"/"AS-BUILT" blocks for the
+full per-edition-versification, aligner, verify, retriever, concordance,
+parse, attestation, cite, facade, and MCP design.

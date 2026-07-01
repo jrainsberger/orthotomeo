@@ -1124,7 +1124,7 @@ standing discipline for T20/T26/T27/T28 (none exist yet, so there's nothing to c
 today) rather than a test built here - each transport ticket must self-verify this as
 it's written, not defer it to a later audit.
 
-### T20 - MCP surface  `BLOCKED` on T25
+### T20 - MCP surface  `DONE`
 Expose the `engine` facade tools over MCP (read-only). Natural-language queries are
 allowed but MUST route to the deterministic facade methods
 (`ConcordLemma`/`ConcordPhrase`), never generate raw SQL (the lexica anti-pattern).
@@ -1132,6 +1132,59 @@ The MCP server is the engine; the LLM client is the analysis layer. Tool definit
 provider = latest Claude per `D:\Claude\Bible` API guidance if a client is built.
 **Acceptance:** each tool callable over MCP returns Citation-bearing JSON; completeness
 guarantees hold across the boundary; the server imports `engine` only.
+
+### T20 AS-BUILT (2026-06-30)
+
+**Dependency (user-approved before writing any code):** the official
+`github.com/modelcontextprotocol/go-sdk` (v1.6.1, Anthropic + Google), chosen over
+the community `mark3labs/mcp-go` and hand-rolling the protocol - offered as a
+3-option choice, user picked the official SDK.
+
+Shipped as `cmd/orthotomeo-mcp`: `main.go` opens the built DB via `engine.Open` and
+runs an `mcp.Server` on `mcp.StdioTransport`; `tools.go` registers one
+`mcp.AddTool[In, Out]` per `Engine` method (`resolve_ref`, `get_verse`,
+`get_passage`, `concord_lemma`, `concord_phrase`, `count`, `parse`, `lemmatize`,
+`attestation`, `cite`) - ten tools, every Phase-5 operation reachable, none building
+SQL. Each handler is a one-line delegation: unmarshal typed args, call the matching
+`Engine` method, return the result - the SDK's generic `ToolHandlerFor` auto-
+validates input against the inferred JSON Schema (from `jsonschema` struct tags) and
+auto-populates both `StructuredContent` and human-readable JSON text from a non-nil
+`Out` value, so no handler builds `CallToolResult` by hand.
+
+**"Server imports engine only," verified, not assumed:** `grep -rn "database/sql\|orthotomeo/store" cmd/orthotomeo-mcp/` returns nothing outside a doc comment.
+
+**A real MCP-spec constraint discovered while wiring this up:** the spec requires an
+object-typed output schema; a bare `[]retriever.Citation` is a JSON array, and
+`mcp.AddTool` panics at registration (`"output schema must have type object"`) if
+`Out` isn't a map or struct. Every tool returning a Citation slice wraps it in a
+one-field `citationsResult{Citations []retriever.Citation}` instead. Caught and
+fixed by actually registering the tools and running the test suite, not by reading
+the SDK source first - the panic message was immediate and exact.
+
+**JSON field names:** `retriever.Ref/Address/Resolution/Citation` and
+`concord.Tally` gained `json:"..."` struct tags (snake_case, `omitempty` on the
+Citation fields that are legitimately absent for many rows - `Lemma`, `DStrong`,
+`Grammar`, `Attestation`, `Editions`, `Caveat`) as part of this ticket - the first
+time these types cross an external JSON boundary, so the first time their wire
+shape mattered. Purely additive; no existing Go code depended on the previous
+(unset, default Go-field-name) JSON marshaling.
+
+**Validated three ways, escalating in realism:**
+1. In-process: `mcp.NewInMemoryTransports()` wiring a real `mcp.Client` to a real
+   `mcp.Server` (this package's actual `registerTools`) in one test binary - 7 tests
+   in `cmd/orthotomeo-mcp/mcp_test.go`, including `Count(q) == len(concord_lemma(q))`
+   held *across the wire* (JSON round-tripped, not just Go values compared
+   in-process) and a `cite` call chained from a live `concord_lemma` result.
+2. Real subprocess: built the actual `orthotomeo-mcp` binary, launched it via
+   `mcp.CommandTransport` (`exec.Command`) exactly as a real MCP host would, against
+   the real corpus DB - `tools/list` returned all 10 tools; `concord_lemma("G0859",
+   "TAGNT")` returned the real 17-citation JSON set over a live stdio pipe.
+3. Input validation: `parse` with `word=0` (invalid, 1-based) is rejected as a tool
+   error (`IsError:true`) rather than silently matching nothing.
+
+Standing discipline carried forward from T25: future transports (T26 CLI, T27
+HTTP+web, T28 Fyne) must self-verify the same `engine`-only import constraint as
+they're written.
 
 ### T26 - CLI adapter  `BLOCKED` on T25
 **Goal:** the thinnest human/scriptable surface, and the facade's first smoke test -
@@ -1236,13 +1289,12 @@ T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
 T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15-T19 ALL DONE)
-Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP, T26 CLI, T27 HTTP+web}
+Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP DONE, T26 CLI, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T20** (MCP - the seam is built, T20 is
-next per user direction), then **T26** (CLI - also a smoke test of the
-facade) and **T27** (HTTP + local web UI), then **T28** (Fyne desktop
-launcher). All of Phase 3 (text/word import), T4b, T14, all of Phase 5
-(T15-T19), and T25 are now DONE.
+Recommended next executable order: **T26** (CLI - a smoke test of the
+facade, and the thinnest remaining transport) and **T27** (HTTP + local web
+UI), then **T28** (Fyne desktop launcher). All of Phase 3 (text/word
+import), T4b, T14, all of Phase 5 (T15-T19), T25, and T20 are now DONE.

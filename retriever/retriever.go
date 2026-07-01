@@ -19,9 +19,9 @@ import (
 // OUT to each edition's own address - never the reverse (invariant #4:
 // reconcile at read time, never assume 1:1 across editions).
 type Ref struct {
-	Book    string
-	Chapter int
-	Verse   int
+	Book    string `json:"book"`
+	Chapter int    `json:"chapter"`
+	Verse   int    `json:"verse"`
 }
 
 func (r Ref) dotted() string {
@@ -44,17 +44,17 @@ type RefRange struct {
 // Exists:false is itself data (T4b: canonical-only or edition-only content
 // is not a bug), never an error.
 type Address struct {
-	Edition string
-	File    string
-	Locator string
-	Exists  bool
+	Edition string `json:"edition"`
+	File    string `json:"file"`
+	Locator string `json:"locator"`
+	Exists  bool   `json:"exists"`
 }
 
 // Resolution is the full cross-edition picture for one Ref.
 type Resolution struct {
-	Ref       Ref
-	Addresses []Address
-	Caveats   []string
+	Ref       Ref       `json:"ref"`
+	Addresses []Address `json:"addresses"`
+	Caveats   []string  `json:"caveats"`
 }
 
 // Confidence marks whether a Citation's provenance is a direct row (High)
@@ -72,18 +72,18 @@ const (
 // Attestation/Editions are populated only by the tickets that carry them
 // (T17/T18); T15 leaves them zero-valued.
 type Citation struct {
-	Ref           Ref
-	Edition       string
-	Text          string
-	SourceFile    string
-	SourceLocator string
-	Lemma         string
-	DStrong       string
-	Grammar       string
-	Attestation   string
-	Editions      string
-	Confidence    Confidence
-	Caveat        string
+	Ref           Ref        `json:"ref"`
+	Edition       string     `json:"edition"`
+	Text          string     `json:"text"`
+	SourceFile    string     `json:"source_file"`
+	SourceLocator string     `json:"source_locator"`
+	Lemma         string     `json:"lemma,omitempty"`
+	DStrong       string     `json:"dstrong,omitempty"`
+	Grammar       string     `json:"grammar,omitempty"`
+	Attestation   string     `json:"attestation,omitempty"`
+	Editions      string     `json:"editions,omitempty"`
+	Confidence    Confidence `json:"confidence"`
+	Caveat        string     `json:"caveat,omitempty"`
 }
 
 // editionInfo describes how one sources.code reaches a canonical Ref.

@@ -17,8 +17,8 @@ import (
 
 // Tally is an occurrence count: the total plus a per-book breakdown.
 type Tally struct {
-	Total  int
-	ByBook map[string]int
+	Total  int            `json:"total"`
+	ByBook map[string]int `json:"by_book"`
 }
 
 // dstrongRe recognizes a disambiguated Strong's number (e.g. "G0859",

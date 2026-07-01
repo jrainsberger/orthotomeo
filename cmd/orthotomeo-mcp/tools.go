@@ -12,7 +12,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jrainsberger/orthotomeo/cite"
@@ -20,6 +22,46 @@ import (
 	"github.com/jrainsberger/orthotomeo/engine"
 	"github.com/jrainsberger/orthotomeo/retriever"
 )
+
+// schemaFor computes T's JSON schema via reflection, then simplifies any
+// nullable-array union (jsonschema-go's default "type": ["null", "array"]
+// for a Go slice field, so a nil slice validates too) down to plain
+// "array". A required slice field never needs to also accept a literal
+// JSON null - "required" already demands the property be present with a
+// real value - and at least one real-world MCP client doesn't parse a
+// "type" that's an array of strings, silently treating the property as
+// untyped and rejecting a real array argument (found live: get_verse,
+// get_passage, concord_phrase, and cite all take a required slice
+// argument and were all affected). Panics on a reflection error, since
+// that would mean an arg struct contains a type jsonschema-go can't
+// represent at all - a build-time-verifiable condition, not a runtime one.
+func schemaFor[T any]() *jsonschema.Schema {
+	s, err := jsonschema.ForType(reflect.TypeFor[T](), &jsonschema.ForOptions{})
+	if err != nil {
+		panic(fmt.Sprintf("schemaFor[%T]: %v", *new(T), err))
+	}
+	simplifyNullableArrays(s)
+	return s
+}
+
+func simplifyNullableArrays(s *jsonschema.Schema) {
+	if s == nil {
+		return
+	}
+	if len(s.Types) > 0 {
+		for _, t := range s.Types {
+			if t != "null" {
+				s.Type = t
+				break
+			}
+		}
+		s.Types = nil
+	}
+	simplifyNullableArrays(s.Items)
+	for _, p := range s.Properties {
+		simplifyNullableArrays(p)
+	}
+}
 
 func ref(book string, chapter, verse int) retriever.Ref {
 	return retriever.Ref{Book: book, Chapter: chapter, Verse: verse}
@@ -113,6 +155,7 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_verse",
 		Description: "Returns verbatim verse text with provenance for one canonical reference, one Citation per requested edition (KJV, ASV, WEB, Brenton).",
+		InputSchema: schemaFor[getVerseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getVerseArgs) (*mcp.CallToolResult, citationsResult, error) {
 		cs, err := e.GetVerse(ref(in.Book, in.Chapter, in.Verse), in.Editions)
 		return nil, citationsResult{Citations: cs}, err
@@ -121,6 +164,7 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_passage",
 		Description: "Returns get_verse's result for every canonical verse in a contiguous, single-book range, in order - verse boundaries preserved, never concatenated into one blob.",
+		InputSchema: schemaFor[getPassageArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getPassageArgs) (*mcp.CallToolResult, citationsResult, error) {
 		rr := retriever.RefRange{
 			Start: ref(in.Book, in.StartChapter, in.StartVerse),
@@ -144,6 +188,7 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Description: "Complete-or-fail multi-word concordance: every occurrence, within one verse, of tokens (lemma strings) " +
 			"appearing in order within window intervening words of each other (window=0 = strictly adjacent). " +
 			"This is the tool for a phrase query like εἰς ἄφεσιν.",
+		InputSchema: schemaFor[concordPhraseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in concordPhraseArgs) (*mcp.CallToolResult, citationsResult, error) {
 		cs, err := e.ConcordPhrase(in.Tokens, in.Corpus, in.Window)
 		return nil, citationsResult{Citations: cs}, err
@@ -185,6 +230,7 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "cite",
 		Description: "Renders Citations (from any of the above tools) as quoted, fully-attributed Markdown bullets - the only sanctioned bridge from a query result to pastable study-document text.",
+		InputSchema: schemaFor[citeArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in citeArgs) (*mcp.CallToolResult, citeResult, error) {
 		return nil, citeResult{Text: cite.Cite(in.Citations)}, nil
 	})

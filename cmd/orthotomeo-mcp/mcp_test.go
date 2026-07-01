@@ -218,6 +218,63 @@ func TestCiteChainedFromConcordLemmaOverMCP(t *testing.T) {
 	}
 }
 
+// TestArraySchemaFieldsAdvertiseArrayNotUnionType is a regression test for a
+// real bug found in production use: jsonschema-go's default schema for a Go
+// []string/[]T field is a nullable union ("type": ["null", "array"]), which
+// at least one real MCP client doesn't parse - it silently treats the
+// property as untyped and rejects a real array argument, with no error at
+// registration time to catch it. This asserts what a client actually
+// receives over ListTools (not just that our own tolerant test client can
+// still round-trip requests) for every tool that takes a required slice
+// argument: "type" must be the plain string "array", never an array of
+// strings, and "items" must be present.
+func TestArraySchemaFieldsAdvertiseArrayNotUnionType(t *testing.T) {
+	session := startTestServer(t, buildFixture(t))
+	res, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+
+	cases := map[string]string{ // tool name -> the slice-typed property to check
+		"get_verse":      "editions",
+		"get_passage":    "editions",
+		"concord_phrase": "tokens",
+		"cite":           "citations",
+	}
+	checked := map[string]bool{}
+	for _, tool := range res.Tools {
+		propName, want := cases[tool.Name]
+		if !want {
+			continue
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok {
+			t.Errorf("%s: InputSchema is %T, want map[string]any", tool.Name, tool.InputSchema)
+			continue
+		}
+		props, _ := schema["properties"].(map[string]any)
+		prop, _ := props[propName].(map[string]any)
+		if prop == nil {
+			t.Errorf("%s: no %q property in schema %+v", tool.Name, propName, schema)
+			continue
+		}
+		if _, isString := prop["type"].(string); !isString {
+			t.Errorf("%s.%s: type = %#v (%T), want the plain string \"array\" - a union type here is exactly what broke a real client", tool.Name, propName, prop["type"], prop["type"])
+		} else if prop["type"] != "array" {
+			t.Errorf("%s.%s: type = %q, want \"array\"", tool.Name, propName, prop["type"])
+		}
+		if prop["items"] == nil {
+			t.Errorf("%s.%s: missing \"items\"", tool.Name, propName)
+		}
+		checked[tool.Name] = true
+	}
+	for name := range cases {
+		if !checked[name] {
+			t.Errorf("tool %q not found in tools/list response", name)
+		}
+	}
+}
+
 func TestParseRejectsInvalidWordNumberOverMCP(t *testing.T) {
 	session := startTestServer(t, buildFixture(t))
 	zero := 0

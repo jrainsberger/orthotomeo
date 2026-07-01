@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jrainsberger/orthotomeo/lexnorm"
 	"github.com/jrainsberger/orthotomeo/verses"
 )
 
@@ -173,7 +174,7 @@ func rootFields(dstrongsField, grammarField, expandedField string) (dstrong, mor
 			// lemma is the second "="-delimited field either way.
 			if _, rest, ok := strings.Cut(m[1], "="); ok {
 				lemmaForm, _, _ := strings.Cut(rest, "=")
-				lemma = sql.NullString{String: lemmaForm, Valid: true}
+				lemma = sql.NullString{String: lexnorm.NFC(lemmaForm), Valid: true}
 			}
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jrainsberger/orthotomeo/lexnorm"
 	"github.com/jrainsberger/orthotomeo/verses"
 )
 
@@ -133,5 +134,5 @@ func dstrongLemma(dstrongGrammar, lemmaGloss string) (dstrong, morphCode, lemma 
 	}
 	d, m, _ := strings.Cut(dstrongGrammar, "=")
 	l, _, _ := strings.Cut(lemmaGloss, "=")
-	return sql.NullString{String: d, Valid: true}, sql.NullString{String: m, Valid: true}, sql.NullString{String: l, Valid: true}, false
+	return sql.NullString{String: d, Valid: true}, sql.NullString{String: m, Valid: true}, sql.NullString{String: lexnorm.NFC(l), Valid: true}, false
 }

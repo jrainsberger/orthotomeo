@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jrainsberger/orthotomeo/lexnorm"
 	"github.com/jrainsberger/orthotomeo/retriever"
 )
 
@@ -53,6 +54,7 @@ func ConcordLemma(db *sql.DB, query, corpus string) ([]retriever.Citation, error
 	if err != nil {
 		return nil, err
 	}
+	query = lexnorm.NFC(query)
 	col := matchColumn(query)
 
 	want, err := countMatches(db, col, query, sourceID)
@@ -99,6 +101,7 @@ func Count(db *sql.DB, query, corpus string) (Tally, error) {
 	if err != nil {
 		return Tally{}, err
 	}
+	query = lexnorm.NFC(query)
 	col := matchColumn(query)
 
 	total, err := countMatches(db, col, query, sourceID)
@@ -129,6 +132,11 @@ func ConcordPhrase(db *sql.DB, tokens []string, corpus string, window int) ([]re
 	if err != nil {
 		return nil, err
 	}
+	normTokens := make([]string, len(tokens))
+	for i, t := range tokens {
+		normTokens[i] = lexnorm.NFC(t)
+	}
+	tokens = normTokens
 
 	anchorWant, err := countMatches(db, "lemma", tokens[0], sourceID)
 	if err != nil {

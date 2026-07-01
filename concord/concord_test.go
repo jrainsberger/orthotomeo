@@ -272,3 +272,51 @@ func TestConcordPhraseRequiresAtLeastTwoTokens(t *testing.T) {
 		t.Fatal("expected an error for a single-token phrase query")
 	}
 }
+
+// oxiaBaptizo/tonosBaptizo are the two Unicode forms of the same word
+// (baptizo): oxiaBaptizo uses the Greek Extended "oxia" accent (U+1F77) -
+// the raw form STEPBible's TAGNT source files actually use before
+// lexnorm.NFC (T10's loader now normalizes on ingest, so a freshly-built DB
+// stores the NFC form - tonosBaptizo, U+03AF - instead). Visually
+// identical, byte-different, canonically equivalent under NFC.
+const (
+	oxiaBaptizo  = "βαπτίζω"
+	tonosBaptizo = "βαπτίζω"
+)
+
+func TestConcordLemmaMatchesAcrossPolytonicAndMonotonicUnicodeForms(t *testing.T) {
+	db := setup(t)
+	lukBook := bookID(t, db, "LUK")
+	v := insertVerse(t, db, "canonical", lukBook, 99, 1)
+	insertWord(t, db, v, "TAGNT", 1, "βαπτίζων", tonosBaptizo, "G0907", "V-PAP-NSM")
+
+	cs, err := concord.ConcordLemma(db, oxiaBaptizo, "TAGNT")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1 - a monotonic-typed query must match a polytonic-stored lemma (lexnorm.NFC)", len(cs))
+	}
+}
+
+func TestConcordPhraseMatchesAcrossPolytonicAndMonotonicUnicodeForms(t *testing.T) {
+	db := setup(t)
+	lukBook := bookID(t, db, "LUK")
+	// Mirrors the real bug: a corpus row stored in the oxia form (as
+	// STEPBible's TAGNT actually is) sat adjacent to an already-tonos-typed
+	// word, and a tonos-typed phrase query found nothing - not because the
+	// words weren't adjacent, but because the byte comparison silently
+	// failed. window=0 (strict adjacency) must still find this pair once
+	// both sides are normalized to the same form.
+	v := insertVerse(t, db, "canonical", lukBook, 99, 2)
+	insertWord(t, db, v, "TAGNT", 1, "βαπτισθεὶς", tonosBaptizo, "G0907", "V-APP-NSM")
+	insertWord(t, db, v, "TAGNT", 2, "ἄφεσιν", "ἄφεσις", "G0859", "N-ASF")
+
+	cs, err := concord.ConcordPhrase(db, []string{oxiaBaptizo, "ἄφεσις"}, "TAGNT", 0)
+	if err != nil {
+		t.Fatalf("concord phrase: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1 - adjacency must be found even though the DB stores the oxia form and the query used the tonos form", len(cs))
+	}
+}

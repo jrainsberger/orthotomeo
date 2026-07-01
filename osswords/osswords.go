@@ -19,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/jrainsberger/orthotomeo/books"
+	"github.com/jrainsberger/orthotomeo/lexnorm"
 	"github.com/jrainsberger/orthotomeo/verses"
 )
 
@@ -125,7 +126,7 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedBook, malformed int, err er
 
 		lemmas := make([]string, len(entries))
 		for i, e := range entries {
-			lemmas[i] = e.Lemma
+			lemmas[i] = lexnorm.NFC(e.Lemma)
 		}
 		parts[ref] = append(parts[ref], part{letter, lemmas})
 	}

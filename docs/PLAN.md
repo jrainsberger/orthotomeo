@@ -1021,9 +1021,48 @@ every word in both verses is Type `KO`, `Confidence:High`, no caveat. An ordinar
 verse (`MRK.1.1`) is predominantly `NKO` by contrast, confirming the distinction is
 real, not an artifact of the query.
 
-### T19 - Cite renderer  `BLOCKED` on T15-T18
+### T19 - Cite renderer  `DONE`
 `Cite([]Citation) -> string` in the `Teaching/Studies/*-references.md` format - the only
 sanctioned bridge from engine output to a study deliverable.
+
+### T19 AS-BUILT (2026-06-30)
+
+**Scope correction, made before writing any code:** a real `Teaching/Studies/
+*-references.md` (`baptism-salvation-references.md` read in full) is a hand-composed
+document - thematic headings, "take-away" summary lines, an analytical comparison
+table, selective bolding of the words that matter to the argument. None of that is
+mechanically derivable from a `Citation` slice; the spec's own §7 ("Deliberately not
+in the retriever") says exactly this is the analysis layer's job. `Cite`'s real,
+narrower, buildable scope - matching §4E precisely - is rendering EACH `Citation`
+into one quoted, fully-attributed Markdown bullet, the raw material a human/LLM then
+arranges into a document like that one. `Cite` does not compose the document; it is
+what a document-composer pastes in.
+
+Shipped as the `cite` package: `Cite(citations []retriever.Citation) string`, exactly
+the spec's signature (no DB argument - purely a string transform over data already
+fetched). One line per Citation:
+
+```
+- **REF** (Edition) — "verbatim text" [metadata] (source: file locator) *(caveat)*
+```
+
+Every clause is conditional on the Citation actually carrying that data - metadata
+(`DStrong, Lemma, Grammar, Type=Attestation, Editions`, in that fixed order, only the
+non-empty ones) never appears for a bare verse_text Citation; a placeholder "nothing
+here" Citation (T15-T18's `Confidence:Flagged`+`Caveat`-only rows) still renders one
+complete, honest line, never a blank or malformed one. `Ref.String()` (the dotted
+USFM form, e.g. `PSA.9.1`) is used as-is - `Citation` doesn't carry a full English
+book name, and `Cite` takes no DB argument to look one up; renaming books for prose
+is exactly the kind of decision left to the analysis layer composing the final
+document.
+
+**Validated against the real DB, chained through T16's own concordance:**
+`Cite(ConcordPhrase(["εἰς","ἄφεσις"], "TAGNT", 0))` renders the full 5-occurrence
+adjacent set as five ready-to-paste bullets, each with its real Greek text, lemma
+metadata, and exact source file + locator - a direct, working example of the
+retriever→citation→deliverable pipeline the whole engine exists to guarantee.
+
+**Phase 5 is now complete (T15-T19).**
 
 ---
 
@@ -1161,15 +1200,15 @@ T4a (verses spine) -> T9 (Brenton, per-edition, DONE), T12 (Swete, DONE), T13 (O
 T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
-T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15, T16, T17, T18 DONE ..T19)
-Phase 5 (T15..T19) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
+T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15-T19 ALL DONE)
+Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam) -> {T20 MCP, T26 CLI, T27 HTTP+web}
 T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
 V2 after deps: T22 (word align, can reuse align package), T23, T24
 ```
 
-Recommended next executable order: **T19** (Cite renderer - the last Phase 5
-ticket), then **T25** (the facade/seam), then the transports fan out cheaply
-from it: **T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local
-web UI) in parallel, then **T20** (MCP) and **T28** (Fyne
-desktop launcher). All of Phase 3 (text/word import), T4b, T14, T15, T16, T17,
-and T18 are now DONE.
+Recommended next executable order: **T25** (the facade/seam - Phase 5 is now
+fully done and ready to wrap), then the transports fan out cheaply from it:
+**T26** (CLI - also the seam's smoke test) and **T27** (HTTP + local web UI)
+in parallel, then **T20** (MCP) and **T28** (Fyne desktop launcher). All of
+Phase 3 (text/word import), T4b, T14, and all of Phase 5 (T15-T19) are now
+DONE.

@@ -88,9 +88,20 @@ real DB matching the acceptance criterion exactly: every word in Mark
 is data, not a defect. Extracted `retriever.ResolveEditionVerses` as a
 shared primitive during this ticket, the third one needing the same
 canonical-ref-to-edition-verse mapping - see PLAN.md's T18 "AS-BUILT"
-notes).
-Phase 3 (text/word import), T4b, T14, T15, T16, T17, and T18 are now
-complete. Next: T19 (Cite renderer - the last Phase 5 ticket). See PLAN.md's
-T4/T14/T15/T16/T17/T18 "DECISION"/"AS-BUILT" blocks for the full
+notes),
+T19 (Cite renderer: `cite` package - `Cite([]Citation) -> string` renders
+each Citation as one quoted, fully-attributed Markdown bullet - the raw,
+pastable material a study document is composed from, not the document
+itself (a real `Teaching/Studies/*-references.md` has hand-written
+headings, analysis, and a comparison table; that composition is the
+analysis layer's job per the Concord spec, not a mechanical render).
+Validated chaining T16 straight through: `Cite(ConcordPhrase(["εἰς",
+"ἄφεσις"], "TAGNT", 0))` renders the full 5-occurrence adjacent set as five
+ready-to-paste bullets with real Greek text, lemma metadata, and exact
+source provenance - see PLAN.md's T19 "AS-BUILT" notes).
+**Phase 5 (T15-T19) is now fully complete.**
+Phase 3 (text/word import), T4b, T14, and all of Phase 5 are done. Next:
+T25 (the engine facade / shared seam, Phase 6's foundation). See PLAN.md's
+T4/T14/T15/T16/T17/T18/T19 "DECISION"/"AS-BUILT" blocks for the full
 per-edition-versification, aligner, verify, retriever, concordance, parse,
-and attestation design.
+attestation, and cite design.

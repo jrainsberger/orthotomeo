@@ -32,14 +32,21 @@ import (
 
 func main() {
 	out := flag.String("out", "data/orthotomeo.db", "output SQLite path")
-	// The corpus is split across two parents on this machine (docs/PLAN.md
-	// "Corpus locations"): --corpus holds bible-text/ + cross_references.txt,
+	// The corpus is split across two parent roots (docs/PLAN.md "Corpus
+	// locations"): --corpus holds bible-text/ + cross_references.txt,
 	// --reference holds STEPBible-Data/ + LXX-Swete-1930/. corpus.Locate tries
 	// each root in turn, so either tree may also be symlinked under the other.
-	root := flag.String("corpus", `D:/Claude/Bible`, "corpus root (bible-text, cross_references.txt)")
-	reference := flag.String("reference", `D:/Reference`, "reference root (STEPBible-Data, LXX-Swete-1930)")
+	// No default path: these are external inputs outside this repo, and a
+	// machine-specific default would silently point at nothing on anyone
+	// else's checkout.
+	root := flag.String("corpus", "", "corpus root (bible-text, cross_references.txt) - required")
+	reference := flag.String("reference", "", "reference root (STEPBible-Data, LXX-Swete-1930) - required")
 	doVerify := flag.Bool("verify", false, "run the T14 completeness self-test after building; exit non-zero on any failure")
 	flag.Parse()
+
+	if *root == "" || *reference == "" {
+		log.Fatal("both --corpus and --reference are required (see docs/PLAN.md \"Corpus locations\")")
+	}
 
 	if err := run(*out, *root, *reference, *doVerify); err != nil {
 		log.Fatalf("build: %v", err)

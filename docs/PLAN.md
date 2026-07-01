@@ -14,8 +14,11 @@ spine** of a study system - the engine owns *text* (verses, words, morphology),
 the LLM client owns *meaning* (interpretation). The engine never interprets;
 the analysis never quotes original-language text it did not get from the engine.
 
-Governing design doc (Phase 4+): `D:\Claude\Bible\Teaching\tools\concordance-retriever-spec.md`
-("Concord spec"). Data model: `docs/erd-v1.svg`. Go style: `D:\Claude\Conventions\go.md`.
+Governing design doc (Phase 4+): the "Concord spec" - an external design document
+not included in this repo; its invariants are summarized operatively below and its
+section numbers (e.g. "§4B", "§10") are cited throughout this file and the codebase
+as provenance for a decision, not as a live link. Data model: `docs/erd-v1.svg`.
+Go style: standard (`gofmt`, `go vet` clean).
 
 ## Cross-cutting invariants (apply to EVERY ticket)
 
@@ -61,18 +64,19 @@ Governing design doc (Phase 4+): `D:\Claude\Bible\Teaching\tools\concordance-ret
   criteria.
 - One commit, conventional message, citing the ticket.
 
-## Corpus locations (this machine)
+## Corpus locations
 
-The builder takes `--corpus <root>` (default to a documented dev path). Sources
-resolve their `source_file` glob (in `sources/sources.json`) against the corpus.
-Current on-disk layout (split across two parents - Ticket 3 reconciles this):
+`cmd/build` takes `--corpus <root>` and `--reference <root>` (both required, no
+default - these are external inputs, not part of this repo). Sources resolve their
+`source_file` glob (in `sources/sources.json`) against whichever root they live
+under. Expected layout, split across the two roots (Ticket 3 reconciles this):
 
-| Tree | Path |
-|---|---|
-| STEPBible-Data | `D:\Reference\STEPBible-Data` |
-| LXX-Swete-1930 | `D:\Reference\LXX-Swete-1930` |
-| bible-text (KJV/ASV/WEB/Brenton/OSS) | `D:\Claude\Bible\bible-text` |
-| cross_references.txt (OpenBible/TSK) | `D:\Claude\Bible\cross_references.txt` |
+| Tree | Root | Relative path |
+|---|---|---|
+| STEPBible-Data | `--reference` | `STEPBible-Data` |
+| LXX-Swete-1930 | `--reference` | `LXX-Swete-1930` |
+| bible-text (KJV/ASV/WEB/Brenton/OSS) | `--corpus` | `bible-text` |
+| cross_references.txt (OpenBible/TSK) | `--corpus` | `cross_references.txt` |
 
 ## Status legend
 

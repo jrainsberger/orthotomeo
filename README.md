@@ -14,9 +14,10 @@ Non-redistributable sources (e.g. CCAT-derived Rahlfs LXX) are user-fetched, nev
   in order; each is independently testable and leaves the repo green. **Read the
   cross-cutting invariants first.**
 - **[docs/erd-v1.svg](docs/erd-v1.svg)** - the data model.
-- **`D:\Claude\Conventions\go.md`** - Go style (binding).
-- **`D:\Claude\Bible\Teaching\tools\concordance-retriever-spec.md`** - the engine
-  thesis (Concord spec), governing Phase 4+.
+- Go style: standard (`gofmt`, `go vet` clean).
+- The engine thesis ("Concord spec") governing Phase 4+ is an external design
+  document not included in this repo; PLAN.md's cross-cutting invariants are its
+  operative summary.
 
 ## Build
 

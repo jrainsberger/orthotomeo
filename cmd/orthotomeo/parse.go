@@ -1,0 +1,43 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+)
+
+func runParse(args []string) error {
+	fs := flag.NewFlagSet("parse", flag.ExitOnError)
+	dbPath := fs.String("db", "data/orthotomeo.db", "path to the built orthotomeo DB")
+	corpus := fs.String("corpus", "", "word-tagged corpus: TAGNT, TAHOT, Swete, OSS-LXX-lemma (required)")
+	word := fs.Int("word", 0, "1-based word_no within the verse; 0 (default) = every word")
+	asJSON := fs.Bool("json", false, "emit the citationsPayload JSON envelope instead of Markdown")
+	fs.Parse(args)
+
+	if *corpus == "" {
+		return fmt.Errorf("--corpus is required (one of TAGNT, TAHOT, Swete, OSS-LXX-lemma)")
+	}
+	if fs.NArg() != 1 {
+		return errUsage("parse <ref> --corpus C [--word N] [--db path] [--json]")
+	}
+	ref, err := parseRef(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+
+	e, err := openEngine(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+
+	var wordPtr *int
+	if *word != 0 {
+		wordPtr = word
+	}
+
+	cs, err := e.Parse(ref, wordPtr, *corpus)
+	if err != nil {
+		return err
+	}
+	return emit(e, cs, *asJSON)
+}

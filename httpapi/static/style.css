@@ -261,7 +261,7 @@ td.ordinal {
 .entry-definition { font-family: var(--font-display); color: var(--ink); font-size: 0.86rem; line-height: 1.55; border-top: 1px solid var(--rule); padding-top: 0.6rem; }
 
 @media print {
-  form#search, header .sub, #printBtn { display: none; }
+  form#search, header .sub, #printBtn, .status-row, #backLink { display: none; }
   header { border-bottom: 2px solid #000; }
   body { background: #fff; color: #000; }
   table { border-color: #000; }

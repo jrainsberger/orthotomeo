@@ -65,25 +65,32 @@ func simplifyNullableArrays(s *jsonschema.Schema) {
 	}
 }
 
-func ref(book string, chapter, verse int) retriever.Ref {
-	return retriever.Ref{Book: book, Chapter: chapter, Verse: verse}
+// ref resolves book through e.ResolveBookCode before building a Ref - the
+// same normalization every other transport (CLI, HTTP) already goes
+// through, so a USFM code or the full English name (any case) both work.
+func ref(e *engine.Engine, book string, chapter, verse int) (retriever.Ref, error) {
+	code, err := e.ResolveBookCode(book)
+	if err != nil {
+		return retriever.Ref{}, err
+	}
+	return retriever.Ref{Book: code, Chapter: chapter, Verse: verse}, nil
 }
 
 type refArgs struct {
-	Book    string `json:"book" jsonschema:"canonical USFM book code, e.g. GEN, PSA, MAT, REV"`
+	Book    string `json:"book" jsonschema:"USFM book code (e.g. GEN, PSA, MAT, REV) or the full English book name, any case (e.g. Genesis, matthew)"`
 	Chapter int    `json:"chapter" jsonschema:"chapter number"`
 	Verse   int    `json:"verse" jsonschema:"verse number"`
 }
 
 type getVerseArgs struct {
-	Book     string   `json:"book" jsonschema:"canonical USFM book code, e.g. GEN, PSA, MAT, REV"`
+	Book     string   `json:"book" jsonschema:"USFM book code (e.g. GEN, PSA, MAT, REV) or the full English book name, any case (e.g. Genesis, matthew)"`
 	Chapter  int      `json:"chapter" jsonschema:"chapter number"`
 	Verse    int      `json:"verse" jsonschema:"verse number"`
 	Editions []string `json:"editions" jsonschema:"verse-text editions to fetch verbatim text from: KJV, ASV, WEB, Brenton"`
 }
 
 type getPassageArgs struct {
-	Book         string   `json:"book" jsonschema:"canonical USFM book code, e.g. GEN, PSA, MAT, REV"`
+	Book         string   `json:"book" jsonschema:"USFM book code (e.g. GEN, PSA, MAT, REV) or the full English book name, any case (e.g. Genesis, matthew)"`
 	StartChapter int      `json:"start_chapter" jsonschema:"first chapter of the range, inclusive"`
 	StartVerse   int      `json:"start_verse" jsonschema:"first verse of the range, inclusive"`
 	EndChapter   int      `json:"end_chapter" jsonschema:"last chapter of the range, inclusive"`
@@ -110,7 +117,7 @@ type countArgs struct {
 }
 
 type wordScopedArgs struct {
-	Book    string `json:"book" jsonschema:"canonical USFM book code, e.g. GEN, PSA, MAT, REV"`
+	Book    string `json:"book" jsonschema:"USFM book code (e.g. GEN, PSA, MAT, REV) or the full English book name, any case (e.g. Genesis, matthew)"`
 	Chapter int    `json:"chapter" jsonschema:"chapter number"`
 	Verse   int    `json:"verse" jsonschema:"verse number"`
 	Word    *int   `json:"word,omitempty" jsonschema:"1-based word_no within the verse; omit for every word in the verse"`
@@ -118,7 +125,7 @@ type wordScopedArgs struct {
 }
 
 type lemmatizeArgs struct {
-	Book    string `json:"book" jsonschema:"canonical USFM book code, e.g. GEN, PSA, MAT, REV"`
+	Book    string `json:"book" jsonschema:"USFM book code (e.g. GEN, PSA, MAT, REV) or the full English book name, any case (e.g. Genesis, matthew)"`
 	Chapter int    `json:"chapter" jsonschema:"chapter number"`
 	Verse   int    `json:"verse" jsonschema:"verse number"`
 	Corpus  string `json:"corpus" jsonschema:"word-tagged corpus: TAGNT, TAHOT, Swete, OSS-LXX-lemma"`
@@ -183,7 +190,11 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 			"whether a canonical reference has a counterpart there and where. Cross-edition divergence (a T4b merge/renumber/divide, " +
 			"or a reference simply missing from an edition) is reported as Caveats - never a silent shift.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in refArgs) (*mcp.CallToolResult, retriever.Resolution, error) {
-		res, err := e.ResolveRef(ref(in.Book, in.Chapter, in.Verse))
+		r, err := ref(e, in.Book, in.Chapter, in.Verse)
+		if err != nil {
+			return nil, retriever.Resolution{}, err
+		}
+		res, err := e.ResolveRef(r)
 		return nil, res, err
 	})
 
@@ -192,7 +203,11 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Description: "Returns verbatim verse text with provenance for one canonical reference, one Citation per requested edition (KJV, ASV, WEB, Brenton).",
 		InputSchema: schemaFor[getVerseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getVerseArgs) (*mcp.CallToolResult, citationsResult, error) {
-		res, err := toCitationsResult(e.GetVerse(ref(in.Book, in.Chapter, in.Verse), in.Editions))
+		r, err := ref(e, in.Book, in.Chapter, in.Verse)
+		if err != nil {
+			return nil, citationsResult{}, err
+		}
+		res, err := toCitationsResult(e.GetVerse(r, in.Editions))
 		return nil, res, err
 	})
 
@@ -201,9 +216,13 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Description: "Returns get_verse's result for every canonical verse in a contiguous, single-book range, in order - verse boundaries preserved, never concatenated into one blob.",
 		InputSchema: schemaFor[getPassageArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getPassageArgs) (*mcp.CallToolResult, citationsResult, error) {
+		code, err := e.ResolveBookCode(in.Book)
+		if err != nil {
+			return nil, citationsResult{}, err
+		}
 		rr := retriever.RefRange{
-			Start: ref(in.Book, in.StartChapter, in.StartVerse),
-			End:   ref(in.Book, in.EndChapter, in.EndVerse),
+			Start: retriever.Ref{Book: code, Chapter: in.StartChapter, Verse: in.StartVerse},
+			End:   retriever.Ref{Book: code, Chapter: in.EndChapter, Verse: in.EndVerse},
 		}
 		res, err := toCitationsResult(e.GetPassage(rr, in.Editions))
 		return nil, res, err
@@ -255,7 +274,11 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		if in.Word != nil && *in.Word < 1 {
 			return nil, interlinearResult{}, fmt.Errorf("word must be >= 1 (1-based), got %d", *in.Word)
 		}
-		words, srcs, err := e.Interlinear(ref(in.Book, in.Chapter, in.Verse), in.Word, in.Corpus)
+		r, err := ref(e, in.Book, in.Chapter, in.Verse)
+		if err != nil {
+			return nil, interlinearResult{}, err
+		}
+		words, srcs, err := e.Interlinear(r, in.Word, in.Corpus)
 		if err != nil {
 			return nil, interlinearResult{}, err
 		}
@@ -266,7 +289,11 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Name:        "lemmatize",
 		Description: "Returns the ordered lemma list for a verse (words with no lemma are omitted, not fabricated).",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in lemmatizeArgs) (*mcp.CallToolResult, citationsResult, error) {
-		res, err := toCitationsResult(e.Lemmatize(ref(in.Book, in.Chapter, in.Verse), in.Corpus))
+		r, err := ref(e, in.Book, in.Chapter, in.Verse)
+		if err != nil {
+			return nil, citationsResult{}, err
+		}
+		res, err := toCitationsResult(e.Lemmatize(r, in.Corpus))
 		return nil, res, err
 	})
 
@@ -308,12 +335,20 @@ func parseTool(e *engine.Engine, in wordScopedArgs) ([]retriever.Citation, error
 	if in.Word != nil && *in.Word < 1 {
 		return nil, fmt.Errorf("word must be >= 1 (1-based), got %d", *in.Word)
 	}
-	return e.Parse(ref(in.Book, in.Chapter, in.Verse), in.Word, in.Corpus)
+	r, err := ref(e, in.Book, in.Chapter, in.Verse)
+	if err != nil {
+		return nil, err
+	}
+	return e.Parse(r, in.Word, in.Corpus)
 }
 
 func attestationTool(e *engine.Engine, in wordScopedArgs) ([]retriever.Citation, error) {
 	if in.Word != nil && *in.Word < 1 {
 		return nil, fmt.Errorf("word must be >= 1 (1-based), got %d", *in.Word)
 	}
-	return e.Attestation(ref(in.Book, in.Chapter, in.Verse), in.Word, in.Corpus)
+	r, err := ref(e, in.Book, in.Chapter, in.Verse)
+	if err != nil {
+		return nil, err
+	}
+	return e.Attestation(r, in.Word, in.Corpus)
 }

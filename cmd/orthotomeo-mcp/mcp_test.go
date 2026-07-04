@@ -191,6 +191,24 @@ func TestGetVerseOverMCP(t *testing.T) {
 	}
 }
 
+// TestGetVerseAcceptsBookNameVariantsOverMCP covers a real gap: the ref()
+// helper built a Ref directly from whatever "book" an MCP client sent,
+// bypassing the same case-insensitive/full-name normalization the CLI and
+// HTTP transports already went through - an LLM client is not guaranteed
+// to respect the schema's "USFM book code" wording.
+func TestGetVerseAcceptsBookNameVariantsOverMCP(t *testing.T) {
+	session := startTestServer(t, buildFixture(t))
+	for _, book := range []string{"MAT", "mat", "Matthew", "MATTHEW", "matthew"} {
+		res := callTool[citationsResult](t, session, "get_verse", map[string]any{
+			"book": book, "chapter": 26, "verse": 28, "editions": []string{"KJV"},
+		})
+		cs := res.Citations
+		if len(cs) != 1 || cs[0].Text != "blood of the new testament" {
+			t.Errorf("get_verse(book=%q) result = %+v", book, cs)
+		}
+	}
+}
+
 func TestResolveRefOverMCP(t *testing.T) {
 	session := startTestServer(t, buildFixture(t))
 	res := callTool[retriever.Resolution](t, session, "resolve_ref", map[string]any{"book": "MAT", "chapter": 26, "verse": 28})

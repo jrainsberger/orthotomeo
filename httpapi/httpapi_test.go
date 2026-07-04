@@ -119,6 +119,42 @@ func TestVerseEndpoint(t *testing.T) {
 	}
 }
 
+// TestVerseEndpointBookNameVariants covers the reported bug: "LUK" (the
+// USFM code) resolved but "LUKE"/"Luke"/"luke" (the full English name, any
+// case) did not, because queryRef passed the raw query param straight
+// through without going through books.ResolveCode.
+func TestVerseEndpointBookNameVariants(t *testing.T) {
+	ts := newTestServer(t)
+	for _, book := range []string{"MAT", "mat", "Mat", "Matthew", "MATTHEW", "matthew"} {
+		t.Run(book, func(t *testing.T) {
+			var body struct {
+				Citations []struct {
+					Text string `json:"text"`
+				} `json:"citations"`
+			}
+			res := getJSON(t, ts, "/verse?book="+book+"&chapter=26&verse=28&editions=KJV", &body)
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", res.StatusCode)
+			}
+			if len(body.Citations) != 1 || body.Citations[0].Text != "blood of the new testament" {
+				t.Errorf("citations = %+v, want the seeded KJV text", body.Citations)
+			}
+		})
+	}
+}
+
+func TestVerseEndpointUnknownBook(t *testing.T) {
+	ts := newTestServer(t)
+	res, err := http.Get(ts.URL + "/verse?book=NoSuchBook&chapter=1&verse=1&editions=KJV")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", res.StatusCode)
+	}
+}
+
 func TestPassageEndpoint(t *testing.T) {
 	ts := newTestServer(t)
 	var body struct {

@@ -136,6 +136,52 @@ func TestResolveUnknown(t *testing.T) {
 	}
 }
 
+// TestResolveCode covers the free-form book input a human types into the
+// web UI or CLI: a USFM code or the full English name, in any case - not
+// just the exact-case scheme value TestResolveCrossScheme checks.
+func TestResolveCode(t *testing.T) {
+	db := newDB(t)
+	if _, _, err := books.Seed(db); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"usfm exact", "LUK", "LUK"},
+		{"usfm lower", "luk", "LUK"},
+		{"usfm mixed", "Luk", "LUK"},
+		{"name exact", "Luke", "LUK"},
+		{"name upper", "LUKE", "LUK"},
+		{"name lower", "luke", "LUK"},
+		{"multi-word name", "Song of Solomon", "SNG"},
+		{"multi-word name lower", "song of solomon", "SNG"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := books.ResolveCode(db, tc.raw)
+			if err != nil {
+				t.Fatalf("ResolveCode(%q): %v", tc.raw, err)
+			}
+			if got != tc.want {
+				t.Errorf("ResolveCode(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveCodeUnknown(t *testing.T) {
+	db := newDB(t)
+	if _, _, err := books.Seed(db); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := books.ResolveCode(db, "Nope"); !errors.Is(err, books.ErrUnknownBook) {
+		t.Errorf("ResolveCode(unknown) err = %v, want ErrUnknownBook", err)
+	}
+}
+
 func mustResolve(t *testing.T, db *sql.DB, scheme, value string) int64 {
 	t.Helper()
 	id, err := books.Resolve(db, scheme, value)

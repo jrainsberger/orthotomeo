@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/jrainsberger/orthotomeo/attestation"
+	"github.com/jrainsberger/orthotomeo/books"
 	"github.com/jrainsberger/orthotomeo/cite"
 	"github.com/jrainsberger/orthotomeo/concord"
 	"github.com/jrainsberger/orthotomeo/interlinear"
@@ -52,6 +53,16 @@ func Open(dbPath string) (*Engine, error) {
 
 // Close releases the underlying connection.
 func (e *Engine) Close() error { return e.db.Close() }
+
+// --- Book-name normalization ---
+
+// ResolveBookCode turns free-form book input (a USFM code or the full
+// English name, any case) into the canonical USFM code retriever.Ref.Book
+// requires. Every transport calls this before constructing a Ref, so book
+// matching lives in exactly one place.
+func (e *Engine) ResolveBookCode(raw string) (string, error) {
+	return books.ResolveCode(e.db, raw)
+}
 
 // --- T15: Citation + reference resolution ---
 

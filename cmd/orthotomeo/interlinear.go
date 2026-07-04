@@ -30,16 +30,16 @@ func runInterlinear(args []string) error {
 	if fs.NArg() != 1 {
 		return errUsage("interlinear <ref> --corpus C [--word N] [--db path] [--json]")
 	}
-	ref, err := parseRef(fs.Arg(0))
-	if err != nil {
-		return err
-	}
-
 	e, err := openEngine(*dbPath)
 	if err != nil {
 		return err
 	}
 	defer e.Close()
+
+	ref, err := parseRef(e, fs.Arg(0))
+	if err != nil {
+		return err
+	}
 
 	var wordPtr *int
 	if *word != 0 {

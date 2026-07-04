@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrUnknownBook means a (scheme, value) pair did not resolve to any book.
@@ -124,4 +125,29 @@ func Resolve(q Querier, scheme, value string) (int64, error) {
 		return 0, fmt.Errorf("resolve %s/%q: %w", scheme, value, err)
 	}
 	return id, nil
+}
+
+// ResolveCode turns free-form book input a person would actually type - a
+// USFM code or the full English name, in any case - into the canonical USFM
+// code retriever.Ref.Book requires. It tries the usfm scheme uppercased
+// first (LUK, luk, Luk), then falls back to a case-insensitive match on
+// name-en (Luke, LUKE, luke). This is the one place that normalization
+// happens; every transport (CLI, HTTP, MCP) calls it before constructing a
+// Ref instead of each re-deriving its own book-matching rules.
+func ResolveCode(q Querier, raw string) (string, error) {
+	var code string
+	err := q.QueryRow(`
+		SELECT b.code FROM book_names n JOIN books b ON b.id = n.book_id
+		WHERE (n.scheme = 'usfm' AND n.value = ?)
+		   OR (n.scheme = 'name-en' AND n.value = ? COLLATE NOCASE)
+		LIMIT 1`,
+		strings.ToUpper(raw), raw,
+	).Scan(&code)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", fmt.Errorf("%w: %q", ErrUnknownBook, raw)
+	case err != nil:
+		return "", fmt.Errorf("resolve book %q: %w", raw, err)
+	}
+	return code, nil
 }

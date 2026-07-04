@@ -20,7 +20,13 @@ func runLookup(args []string) error {
 	if fs.NArg() != 1 {
 		return errUsage("lookup <ref> [--edition KJV,ASV,...] [--db path] [--json]")
 	}
-	ref, err := parseRef(fs.Arg(0))
+	e, err := openEngine(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+
+	ref, err := parseRef(e, fs.Arg(0))
 	if err != nil {
 		return err
 	}
@@ -29,12 +35,6 @@ func runLookup(args []string) error {
 	if *editionsFlag != "" {
 		editions = strings.Split(*editionsFlag, ",")
 	}
-
-	e, err := openEngine(*dbPath)
-	if err != nil {
-		return err
-	}
-	defer e.Close()
 
 	cs, err := e.GetVerse(ref, editions)
 	if err != nil {

@@ -158,6 +158,28 @@ func TestLookupReturnsVerbatimText(t *testing.T) {
 	}
 }
 
+// TestLookupAcceptsBookNameVariants covers the reported bug: the USFM code
+// (MAT) worked but the full English name in any case (Matthew/MATTHEW/
+// matthew) did not, because parseRef only upper-cased the token instead of
+// resolving it against the registry.
+func TestLookupAcceptsBookNameVariants(t *testing.T) {
+	dbPath := buildFixture(t)
+	for _, book := range []string{"Matthew", "MATTHEW", "matthew", "mat"} {
+		t.Run(book, func(t *testing.T) {
+			var runErr error
+			out := captureStdout(t, func() {
+				runErr = runLookup([]string{"--db", dbPath, "--edition", "KJV", book + ".26.28"})
+			})
+			if runErr != nil {
+				t.Fatalf("lookup: %v", runErr)
+			}
+			if !strings.Contains(out, "blood of the new testament") {
+				t.Errorf("output missing verbatim KJV text: %q", out)
+			}
+		})
+	}
+}
+
 func TestParseReturnsMorphologyForOneWord(t *testing.T) {
 	dbPath := buildFixture(t)
 	var runErr error

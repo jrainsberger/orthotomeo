@@ -43,10 +43,14 @@ func optionalWord(r *http.Request) (*int, error) {
 	return &n, nil
 }
 
-func queryRef(r *http.Request) (retriever.Ref, error) {
+func (s *Server) queryRef(r *http.Request) (retriever.Ref, error) {
 	book := r.URL.Query().Get("book")
 	if book == "" {
 		return retriever.Ref{}, fmt.Errorf(`missing required query param "book"`)
+	}
+	code, err := s.e.ResolveBookCode(book)
+	if err != nil {
+		return retriever.Ref{}, err
 	}
 	chapter, err := queryInt(r, "chapter")
 	if err != nil {
@@ -56,7 +60,7 @@ func queryRef(r *http.Request) (retriever.Ref, error) {
 	if err != nil {
 		return retriever.Ref{}, err
 	}
-	return retriever.Ref{Book: book, Chapter: chapter, Verse: verse}, nil
+	return retriever.Ref{Book: code, Chapter: chapter, Verse: verse}, nil
 }
 
 func splitCSV(s string) []string {
@@ -71,7 +75,7 @@ func splitCSV(s string) []string {
 }
 
 func (s *Server) handleVerse(w http.ResponseWriter, r *http.Request) {
-	ref, err := queryRef(r)
+	ref, err := s.queryRef(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -100,6 +104,11 @@ func (s *Server) handlePassage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf(`missing required query param "book"`))
 		return
 	}
+	code, err := s.e.ResolveBookCode(book)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	startCh, err := queryInt(r, "start_chapter")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -126,8 +135,8 @@ func (s *Server) handlePassage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rr := retriever.RefRange{
-		Start: retriever.Ref{Book: book, Chapter: startCh, Verse: startV},
-		End:   retriever.Ref{Book: book, Chapter: endCh, Verse: endV},
+		Start: retriever.Ref{Book: code, Chapter: startCh, Verse: startV},
+		End:   retriever.Ref{Book: code, Chapter: endCh, Verse: endV},
 	}
 	cs, err := s.e.GetPassage(rr, editions)
 	if err != nil {
@@ -200,7 +209,7 @@ func (s *Server) handleConcord(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) wordScoped(r *http.Request) (ref retriever.Ref, word *int, corpus string, err error) {
-	ref, err = queryRef(r)
+	ref, err = s.queryRef(r)
 	if err != nil {
 		return
 	}

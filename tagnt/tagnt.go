@@ -37,6 +37,10 @@ const sourceCode = "TAGNT"
 // counter.
 var refRe = regexp.MustCompile(`^([A-Za-z0-9]+)\.(\d+)\.(\d+)(?:\(\d+\.\d+\))?#(\d+)=(\S+)$`)
 
+// surfaceTranslitRe splits the Greek column's "SURFACE (translit)" shape -
+// e.g. "Βίβλος (Biblos)", "μήποτε (mēpote)" for a compound-tagged word too.
+var surfaceTranslitRe = regexp.MustCompile(`^(.*) \(([^()]*)\)$`)
+
 // Load reads one TAGNT TSV (Mat-Jhn or Act-Rev) and inserts every data row
 // into words. Verses that fail to resolve against the canonical spine are
 // counted as skipped, not a load failure (invariant #4); a compound-tagged
@@ -62,8 +66,8 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedVerse, compound int, err er
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO words (verse_id, source_id, word_no, surface, lemma, dstrong, morph_code, attestation, editions, source_locator)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		INSERT INTO words (verse_id, source_id, word_no, surface, lemma, dstrong, morph_code, attestation, editions, source_locator, translit)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("prepare: %w", err)
 	}
@@ -93,13 +97,13 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedVerse, compound int, err er
 			return 0, 0, 0, fmt.Errorf("bad word number in %q: %w", fields[0], perr)
 		}
 
-		surface := surfaceWord(fields[1])
+		surface, translit := surfaceAndTranslit(fields[1])
 		dstrong, morphCode, lemma, isCompound := dstrongLemma(fields[3], fields[4])
 		if isCompound {
 			compound++
 		}
 
-		if _, err := stmt.Exec(verseID, sourceID, wordNum, surface, lemma, dstrong, morphCode, attestation, fields[5], fields[0]); err != nil {
+		if _, err := stmt.Exec(verseID, sourceID, wordNum, surface, lemma, dstrong, morphCode, attestation, fields[5], fields[0], nullIfEmpty(translit)); err != nil {
 			return 0, 0, 0, fmt.Errorf("insert %s: %w", fields[0], err)
 		}
 		inserted++
@@ -114,13 +118,28 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedVerse, compound int, err er
 	return inserted, skippedVerse, compound, nil
 }
 
-// surfaceWord strips the trailing " (transliteration)" from the Greek
-// column, e.g. "Βίβλος (Biblos)" -> "Βίβλος".
-func surfaceWord(field string) string {
-	if i := strings.LastIndex(field, " ("); i >= 0 {
-		return field[:i]
+// surfaceAndTranslit splits the Greek column into its surface form and the
+// trailing transliteration STEPBible carries in parens, e.g.
+// "Βίβλος (Biblos)" -> ("Βίβλος", "Biblos"). A field with no parenthetical
+// (shouldn't occur in the real corpus, but not assumed) returns the whole
+// field as surface with an empty transliteration, not an error - the ref
+// itself is still a real, insertable word row either way.
+func surfaceAndTranslit(field string) (surface, translit string) {
+	if m := surfaceTranslitRe.FindStringSubmatch(field); m != nil {
+		return m[1], m[2]
 	}
-	return field
+	return field, ""
+}
+
+// nullIfEmpty turns "" into SQL NULL rather than storing an empty string -
+// "no transliteration" should read the same as "the column doesn't apply
+// here" (Swete/OSS-LXX-lemma rows, which never call this at all), not as a
+// distinct empty-vs-absent state.
+func nullIfEmpty(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
 }
 
 // dstrongLemma splits the "dStrong=Grammar" and "Lemma=Gloss" columns. A

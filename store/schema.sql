@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS sources (
     source_file  TEXT,                              -- logical/relative path, not an absolute machine path
     format       TEXT,                              -- json|usfm|html|tsv|csv|js|txt
     shippable    INTEGER NOT NULL DEFAULT 1,        -- 0/1: redistributable in the open-source release
-    fetch_url    TEXT                               -- set only for user-fetched (non-shippable) sources
+    fetch_url    TEXT,                              -- set only for user-fetched (non-shippable) sources
+    homepage_url TEXT                               -- human-facing reference link (project site/repo), T36
 );
 
 -- Ticket 2: canonical book registry + per-scheme name aliases.
@@ -161,7 +162,9 @@ CREATE TABLE IF NOT EXISTS words (
     morph_code     TEXT,
     attestation    TEXT    NOT NULL,   -- N/K/O Type from the ref, eg "NKO", "K", "N(k)O"
     editions       TEXT    NOT NULL,   -- eg "NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz"
-    source_locator TEXT    NOT NULL UNIQUE
+    source_locator TEXT    NOT NULL UNIQUE,
+    translit       TEXT                -- per-occurrence transliteration (T32); NULL where the
+                                        -- source has none (Swete, OSS-LXX-lemma)
 );
 
 CREATE INDEX IF NOT EXISTS idx_words_verse ON words(verse_id);

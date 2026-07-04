@@ -140,7 +140,7 @@ func insertAlignment(t *testing.T, db *sql.DB, canonicalID, editionID int64, sou
 
 func TestConcordLemmaByDStrongReturnsAllOccurrencesInclControlCase(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT")
+	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestConcordLemmaByDStrongReturnsAllOccurrencesInclControlCase(t *testing.T)
 
 func TestConcordLemmaNeverReturnsNonMatchingRows(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT")
+	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestConcordLemmaNeverReturnsNonMatchingRows(t *testing.T) {
 
 func TestConcordLemmaByPlainLemmaText(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "ἄφεσις", "TAGNT")
+	cs, err := concord.ConcordLemma(db, "ἄφεσις", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
@@ -185,13 +185,48 @@ func TestConcordLemmaByPlainLemmaText(t *testing.T) {
 	}
 }
 
-func TestCountAgreesWithConcordLemma(t *testing.T) {
+// TestConcordLemmaPopulatesTranslit is the direct T32 test: a words row
+// carrying a transliteration must surface it on the returned Citation, not
+// silently drop it the way SourceFile used to be a per-row field before T31
+// moved it out - Translit is genuine per-row data, so it stays on Citation
+// itself, unlike SourceFile/HomepageURL.
+func TestConcordLemmaPopulatesTranslit(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT")
+	// Update by dstrong+verse, not source_locator - the package-level
+	// wordSeq counter that generates "loc#N" isn't reset between tests, so
+	// its exact value here depends on test execution order.
+	if _, err := db.Exec(`
+		UPDATE words SET translit = 'aphesin'
+		WHERE dstrong = 'G0859' AND verse_id = (
+			SELECT v.id FROM verses v JOIN books b ON b.id = v.book_id
+			WHERE b.code = 'MAT' AND v.chapter = 26 AND v.verse = 28)`); err != nil {
+		t.Fatalf("seed translit: %v", err)
+	}
+	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
-	tally, err := concord.Count(db, "G0859", "TAGNT")
+	var saw bool
+	for _, c := range cs {
+		if c.Ref.Book == "MAT" && c.Ref.Chapter == 26 && c.Ref.Verse == 28 {
+			saw = true
+			if c.Translit != "aphesin" {
+				t.Errorf("translit = %q, want aphesin", c.Translit)
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("Mat.26.28 missing from result set")
+	}
+}
+
+func TestCountAgreesWithConcordLemma(t *testing.T) {
+	db := setup(t)
+	cs, err := concord.ConcordLemma(db, "G0859", "TAGNT", "")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	tally, err := concord.Count(db, "G0859", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -230,9 +265,61 @@ func TestConcordPhraseWindowAllowsGap(t *testing.T) {
 	}
 }
 
+// TestConcordPhraseJoinsTranslitWhenEveryWordHasOne and its sibling below
+// are the direct tests for chainTranslit's all-or-nothing join: Mat.26.28's
+// εἰς/ἄφεσιν pair both get a translit seeded, Act.2.38's pair gets only one -
+// the joined field must appear for the fully-seeded chain and stay empty for
+// the partially-seeded one, never a join with a blank gap in it.
+func TestConcordPhraseJoinsTranslitWhenEveryWordHasOne(t *testing.T) {
+	db := setup(t)
+	matVerse := `(SELECT v.id FROM verses v JOIN books b ON b.id = v.book_id WHERE b.code = 'MAT' AND v.chapter = 26 AND v.verse = 28)`
+	if _, err := db.Exec(`UPDATE words SET translit = 'eis' WHERE lemma = 'εἰς' AND verse_id = ` + matVerse); err != nil {
+		t.Fatalf("seed translit: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE words SET translit = 'aphesin' WHERE lemma = 'ἄφεσις' AND verse_id = ` + matVerse); err != nil {
+		t.Fatalf("seed translit: %v", err)
+	}
+
+	cs, err := concord.ConcordPhrase(db, []string{"εἰς", "ἄφεσις"}, "TAGNT", 0)
+	if err != nil {
+		t.Fatalf("concord phrase: %v", err)
+	}
+	for _, c := range cs {
+		if c.Ref.Chapter == 26 && c.Ref.Verse == 28 {
+			if c.Translit != "eis aphesin" {
+				t.Errorf("translit = %q, want %q (both words seeded)", c.Translit, "eis aphesin")
+			}
+		}
+		if c.Ref.Chapter == 2 && c.Ref.Verse == 38 {
+			if c.Translit != "" {
+				t.Errorf("translit = %q, want empty (Act.2.38 has no seeded translit at all)", c.Translit)
+			}
+		}
+	}
+}
+
+func TestConcordPhraseLeavesTranslitEmptyWhenAnyWordIsMissingOne(t *testing.T) {
+	db := setup(t)
+	matVerse := `(SELECT v.id FROM verses v JOIN books b ON b.id = v.book_id WHERE b.code = 'MAT' AND v.chapter = 26 AND v.verse = 28)`
+	// Seed only the εἰς word, not ἄφεσιν - a partial chain.
+	if _, err := db.Exec(`UPDATE words SET translit = 'eis' WHERE lemma = 'εἰς' AND verse_id = ` + matVerse); err != nil {
+		t.Fatalf("seed translit: %v", err)
+	}
+
+	cs, err := concord.ConcordPhrase(db, []string{"εἰς", "ἄφεσις"}, "TAGNT", 0)
+	if err != nil {
+		t.Fatalf("concord phrase: %v", err)
+	}
+	for _, c := range cs {
+		if c.Ref.Chapter == 26 && c.Ref.Verse == 28 && c.Translit != "" {
+			t.Errorf("translit = %q, want empty - a partial join must not appear as if complete", c.Translit)
+		}
+	}
+}
+
 func TestConcordLemmaAlignmentKeyedCorpusSurfacesDivergence(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "ἐξομολογήσομαι", "OSS-LXX-lemma")
+	cs, err := concord.ConcordLemma(db, "ἐξομολογήσομαι", "OSS-LXX-lemma", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
@@ -250,14 +337,14 @@ func TestConcordLemmaAlignmentKeyedCorpusSurfacesDivergence(t *testing.T) {
 
 func TestConcordLemmaRejectsNonWordCorpus(t *testing.T) {
 	db := setup(t)
-	if _, err := concord.ConcordLemma(db, "G0859", "KJV"); err == nil {
+	if _, err := concord.ConcordLemma(db, "G0859", "KJV", ""); err == nil {
 		t.Fatal("expected an error querying a verse_text-only corpus for word concordance")
 	}
 }
 
 func TestConcordLemmaUnknownDStrongReturnsEmptyNotError(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "G9999", "TAGNT")
+	cs, err := concord.ConcordLemma(db, "G9999", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
@@ -290,12 +377,75 @@ func TestConcordLemmaMatchesAcrossPolytonicAndMonotonicUnicodeForms(t *testing.T
 	v := insertVerse(t, db, "canonical", lukBook, 99, 1)
 	insertWord(t, db, v, "TAGNT", 1, "βαπτίζων", tonosBaptizo, "G0907", "V-PAP-NSM")
 
-	cs, err := concord.ConcordLemma(db, oxiaBaptizo, "TAGNT")
+	cs, err := concord.ConcordLemma(db, oxiaBaptizo, "TAGNT", "")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
 	if len(cs) != 1 {
 		t.Fatalf("citations = %d, want 1 - a monotonic-typed query must match a polytonic-stored lemma (lexnorm.NFC)", len(cs))
+	}
+}
+
+// TestConcordLemmaBySurfaceMatchesExactInflectedForm is the direct T33 test:
+// Mat.1.1's word has surface "Βίβλος" (capitalized, as it appears in the
+// verse) but lemma "βίβλος" (lowercase dictionary form) - two different
+// strings. by="surface" must match against the literal surface text, not
+// silently fall back to lemma.
+func TestConcordLemmaBySurfaceMatchesExactInflectedForm(t *testing.T) {
+	db := setup(t)
+	cs, err := concord.ConcordLemma(db, "Βίβλος", "TAGNT", "surface")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1 (Mat.1.1's exact surface form)", len(cs))
+	}
+	if cs[0].Ref.Book != "MAT" || cs[0].Ref.Chapter != 1 || cs[0].Ref.Verse != 1 {
+		t.Errorf("ref = %v, want MAT.1.1", cs[0].Ref)
+	}
+}
+
+// TestConcordLemmaByExplicitLemmaDoesNotMatchSurfaceText confirms an
+// explicit by="lemma" restricts the search to the lemma column only - the
+// same surface-vs-lemma string ("Βίβλος" vs "βίβλος") must NOT match when
+// the caller explicitly asked for lemma, proving by isn't a hint that also
+// widens the search, it's a hard column selector.
+func TestConcordLemmaByExplicitLemmaDoesNotMatchSurfaceText(t *testing.T) {
+	db := setup(t)
+	cs, err := concord.ConcordLemma(db, "Βίβλος", "TAGNT", "lemma")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 0 {
+		t.Errorf("citations = %d, want 0 - by=\"lemma\" must not match the capitalized surface form", len(cs))
+	}
+}
+
+// TestConcordLemmaRejectsUnknownByValue: an invalid by value is a caller
+// error, not silently treated as auto-detect.
+func TestConcordLemmaRejectsUnknownByValue(t *testing.T) {
+	db := setup(t)
+	if _, err := concord.ConcordLemma(db, "Βίβλος", "TAGNT", "bogus"); err == nil {
+		t.Fatal("expected an error for an unknown by value")
+	}
+}
+
+// TestCountRespectsByOverride confirms Count's by parameter runs the
+// identical WHERE clause ConcordLemma would, same as the query/corpus
+// agreement TestCountAgreesWithConcordLemma already covers for the default
+// auto-detect path.
+func TestCountRespectsByOverride(t *testing.T) {
+	db := setup(t)
+	cs, err := concord.ConcordLemma(db, "Βίβλος", "TAGNT", "surface")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	tally, err := concord.Count(db, "Βίβλος", "TAGNT", "surface")
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if tally.Total != len(cs) {
+		t.Errorf("Count.Total = %d, len(ConcordLemma) = %d - must agree", tally.Total, len(cs))
 	}
 }
 

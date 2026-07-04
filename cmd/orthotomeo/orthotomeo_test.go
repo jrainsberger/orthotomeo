@@ -60,6 +60,12 @@ func buildFixture(t *testing.T) string {
 	insertWord(2, "ἄφεσιν", "ἄφεσις", "G0859", "N-ASF")
 
 	if _, err := db.Exec(`
+		INSERT INTO lexicon (dstrong, estrong, ustrong, language, lemma, translit, gloss, definition, def_license)
+		VALUES ('G0859', 'G0859', 'G0859', 'grc', 'ἄφεσις', 'aphesis', 'forgiveness', 'release, pardon', 'Abbott-Smith PD')`); err != nil {
+		t.Fatalf("seed lexicon: %v", err)
+	}
+
+	if _, err := db.Exec(`
 		INSERT INTO verse_text (verse_id, source_id, native_ref, text)
 		VALUES (?, (SELECT id FROM sources WHERE code = 'KJV'), 'Mat.26.28', 'blood of the new testament')`, verseID); err != nil {
 		t.Fatalf("insert verse_text: %v", err)
@@ -177,6 +183,55 @@ func TestAttestReturnsManuscriptData(t *testing.T) {
 	}
 	if !strings.Contains(out, "NKO") {
 		t.Errorf("output missing Type=NKO attestation: %q", out)
+	}
+}
+
+func TestDefineReturnsGlossAndDefinition(t *testing.T) {
+	dbPath := buildFixture(t)
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runDefine([]string{"--db", dbPath, "G0859"})
+	})
+	if runErr != nil {
+		t.Fatalf("define: %v", runErr)
+	}
+	if !strings.Contains(out, "forgiveness") || !strings.Contains(out, "release, pardon") {
+		t.Errorf("output missing gloss/definition: %q", out)
+	}
+}
+
+func TestInterlinearIncludesGlossFromLexiconLookup(t *testing.T) {
+	dbPath := buildFixture(t)
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runInterlinear([]string{"--corpus", "TAGNT", "--db", dbPath, "MAT.26.28"})
+	})
+	if runErr != nil {
+		t.Fatalf("interlinear: %v", runErr)
+	}
+	if !strings.Contains(out, "ἄφεσιν") || !strings.Contains(out, "forgiveness") {
+		t.Errorf("output missing text/gloss: %q", out)
+	}
+}
+
+func TestInterlinearJSONMatchesInterlinearPayloadShape(t *testing.T) {
+	dbPath := buildFixture(t)
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = runInterlinear([]string{"--corpus", "TAGNT", "--db", dbPath, "--json", "MAT.26.28"})
+	})
+	if runErr != nil {
+		t.Fatalf("interlinear: %v", runErr)
+	}
+	var payload interlinearPayload
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal: %v\noutput: %s", err, out)
+	}
+	if len(payload.Words) != 2 {
+		t.Fatalf("words = %d, want 2", len(payload.Words))
+	}
+	if payload.Sources["TAGNT"].File == "" {
+		t.Error("Sources[TAGNT].File is empty, want it populated")
 	}
 }
 

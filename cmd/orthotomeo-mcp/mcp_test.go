@@ -63,6 +63,12 @@ func buildFixture(t *testing.T) string {
 	insertWord(2, "ἄφεσιν", "ἄφεσις", "G0859", "N-ASF")
 
 	if _, err := db.Exec(`
+		INSERT INTO lexicon (dstrong, estrong, ustrong, language, lemma, translit, gloss, definition, def_license)
+		VALUES ('G0859', 'G0859', 'G0859', 'grc', 'ἄφεσις', 'aphesis', 'forgiveness', 'release, pardon', 'Abbott-Smith PD')`); err != nil {
+		t.Fatalf("seed lexicon: %v", err)
+	}
+
+	if _, err := db.Exec(`
 		INSERT INTO verse_text (verse_id, source_id, native_ref, text)
 		VALUES (?, (SELECT id FROM sources WHERE code = 'KJV'), 'Mat.26.28', 'blood of the new testament')`, verseID); err != nil {
 		t.Fatalf("insert verse_text: %v", err)
@@ -287,5 +293,70 @@ func TestParseRejectsInvalidWordNumberOverMCP(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("expected parse to report a tool error for word=0 (not 1-based)")
+	}
+}
+
+// TestInterlinearOverMCP is a genuine end-to-end round trip for T35 - not
+// just interlinear.Build in isolation, but the real MCP tool registration,
+// schema, and JSON marshaling path.
+func TestInterlinearOverMCP(t *testing.T) {
+	session := startTestServer(t, buildFixture(t))
+	res := callTool[interlinearResult](t, session, "interlinear", map[string]any{
+		"book": "MAT", "chapter": 26, "verse": 28, "corpus": "TAGNT",
+	})
+	if len(res.Words) != 2 {
+		t.Fatalf("words = %d, want 2", len(res.Words))
+	}
+	var saw bool
+	for _, w := range res.Words {
+		if w.DStrong == "G0859" {
+			saw = true
+			if w.Gloss != "forgiveness" {
+				t.Errorf("gloss = %q, want forgiveness (resolved via lexicon_lookup)", w.Gloss)
+			}
+			if w.Translit != "" {
+				t.Errorf("translit = %q, want empty (not seeded in this fixture) - not a reason to fail, just confirming no fabrication", w.Translit)
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("G0859 word missing from interlinear result")
+	}
+	if res.Sources["TAGNT"].File == "" {
+		t.Error("Sources[TAGNT].File is empty, want the T31 sources map populated same as citationsResult")
+	}
+}
+
+// TestInterlinearRejectsInvalidWordNumberOverMCP mirrors parse's own guard -
+// interlinear shares the same wordScopedArgs validation.
+func TestInterlinearRejectsInvalidWordNumberOverMCP(t *testing.T) {
+	session := startTestServer(t, buildFixture(t))
+	zero := 0
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "interlinear",
+		Arguments: map[string]any{"book": "MAT", "chapter": 26, "verse": 28, "word": zero, "corpus": "TAGNT"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected interlinear to report a tool error for word=0 (not 1-based)")
+	}
+}
+
+// TestLexiconLookupOverMCP confirms the Greek/Hebrew definition license gate
+// (T34) holds over the real MCP transport, not just lexicon.Lookup directly.
+func TestLexiconLookupOverMCP(t *testing.T) {
+	session := startTestServer(t, buildFixture(t))
+	entry := callTool[struct {
+		DStrong    string  `json:"dstrong"`
+		Gloss      string  `json:"gloss"`
+		Definition *string `json:"definition"`
+	}](t, session, "lexicon_lookup", map[string]any{"dstrong": "G0859"})
+	if entry.Gloss != "forgiveness" {
+		t.Errorf("gloss = %q, want forgiveness", entry.Gloss)
+	}
+	if entry.Definition == nil || *entry.Definition != "release, pardon" {
+		t.Errorf("definition = %v, want a populated Greek definition", entry.Definition)
 	}
 }

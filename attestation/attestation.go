@@ -33,11 +33,6 @@ func Attestation(db *sql.DB, ref retriever.Ref, word *int, corpus string) ([]ret
 			fmt.Sprintf("no %s alignment for %s (edition-only content or an unaligned gap - T4b)", corpus, ref))}, nil
 	}
 
-	file, err := sourceFile(db, corpus)
-	if err != nil {
-		return nil, err
-	}
-
 	var cites []retriever.Citation
 	for _, tgt := range targets {
 		rows, err := wordsAt(db, tgt.VerseID, corpus, word)
@@ -45,7 +40,7 @@ func Attestation(db *sql.DB, ref retriever.Ref, word *int, corpus string) ([]ret
 			return nil, err
 		}
 		for _, w := range rows {
-			cites = append(cites, buildCitation(ref, corpus, file, tgt, w))
+			cites = append(cites, buildCitation(ref, corpus, tgt, w))
 		}
 	}
 	if len(cites) == 0 {
@@ -59,7 +54,7 @@ func Attestation(db *sql.DB, ref retriever.Ref, word *int, corpus string) ([]ret
 	return cites, nil
 }
 
-func buildCitation(ref retriever.Ref, corpus, file string, tgt retriever.AlignedVerse, w wordRow) retriever.Citation {
+func buildCitation(ref retriever.Ref, corpus string, tgt retriever.AlignedVerse, w wordRow) retriever.Citation {
 	var caveats []string
 	confidence := retriever.ConfidenceHigh
 	if tgt.Relation != "exact" {
@@ -79,9 +74,9 @@ func buildCitation(ref retriever.Ref, corpus, file string, tgt retriever.Aligned
 
 	return retriever.Citation{
 		Ref: ref, Edition: corpus, Text: displayText(w),
-		SourceFile: file, SourceLocator: w.sourceLocator,
-		Lemma: w.lemma, DStrong: w.dstrong,
-		Attestation: w.attestation, Editions: w.editions,
+		Locator: w.sourceLocator,
+		Lemma:   w.lemma, Translit: w.translit, DStrong: w.dstrong,
+		Attestation: w.attestation, Manuscripts: w.editions,
 		Confidence: confidence, Caveat: strings.Join(caveats, "; "),
 	}
 }
@@ -102,11 +97,13 @@ func noAttestationReason(corpus string) string {
 type wordRow struct {
 	surface, lemma, dstrong, attestation, editions string
 	sourceLocator                                  string
+	translit                                       string
 }
 
 func wordsAt(db *sql.DB, verseID int64, corpus string, word *int) ([]wordRow, error) {
 	query := `
-		SELECT COALESCE(surface,''), COALESCE(lemma,''), COALESCE(dstrong,''), attestation, editions, source_locator
+		SELECT COALESCE(surface,''), COALESCE(lemma,''), COALESCE(dstrong,''), attestation, editions, source_locator,
+		       COALESCE(translit,'')
 		FROM words
 		WHERE verse_id = ? AND source_id = (SELECT id FROM sources WHERE code = ?)`
 	args := []any{verseID, corpus}
@@ -125,7 +122,8 @@ func wordsAt(db *sql.DB, verseID int64, corpus string, word *int) ([]wordRow, er
 	var out []wordRow
 	for rows.Next() {
 		var w wordRow
-		if err := rows.Scan(&w.surface, &w.lemma, &w.dstrong, &w.attestation, &w.editions, &w.sourceLocator); err != nil {
+		if err := rows.Scan(&w.surface, &w.lemma, &w.dstrong, &w.attestation, &w.editions, &w.sourceLocator,
+			&w.translit); err != nil {
 			return nil, fmt.Errorf("wordsAt scan: %w", err)
 		}
 		out = append(out, w)
@@ -142,12 +140,4 @@ func displayText(w wordRow) string {
 
 func noDataCitation(ref retriever.Ref, corpus, caveat string) retriever.Citation {
 	return retriever.Citation{Ref: ref, Edition: corpus, Confidence: retriever.ConfidenceFlagged, Caveat: caveat}
-}
-
-func sourceFile(db *sql.DB, code string) (string, error) {
-	var f string
-	if err := db.QueryRow(`SELECT source_file FROM sources WHERE code = ?`, code).Scan(&f); err != nil {
-		return "", fmt.Errorf("sourceFile %s: %w", code, err)
-	}
-	return f, nil
 }

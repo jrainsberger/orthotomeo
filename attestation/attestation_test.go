@@ -140,14 +140,34 @@ func TestAttestationReturnsTypeAndEditionsAsNeutralData(t *testing.T) {
 	if c.Attestation != "KO" {
 		t.Errorf("attestation = %q, want KO (the real Mark 16:9-20 shape)", c.Attestation)
 	}
-	if c.Editions != "TR+Byz" {
-		t.Errorf("editions = %q, want TR+Byz", c.Editions)
+	if c.Manuscripts != "TR+Byz" {
+		t.Errorf("manuscripts = %q, want TR+Byz", c.Manuscripts)
 	}
 	// KO/TR+Byz is reportable, neutral data about which manuscripts carry
 	// the word - it is NOT itself a reason to flag the citation (that would
 	// be arguing the variant, which T18 explicitly must not do).
 	if c.Confidence != retriever.ConfidenceHigh {
 		t.Errorf("confidence = %q, want High - a KO attestation is data, not a defect", c.Confidence)
+	}
+}
+
+// TestAttestationPopulatesTranslit is the direct T32 test: buildCitation
+// must forward a words row's transliteration onto the Citation.
+func TestAttestationPopulatesTranslit(t *testing.T) {
+	db := setup(t)
+	if _, err := db.Exec(`UPDATE words SET translit = 'anastas' WHERE dstrong = 'G0450'`); err != nil {
+		t.Fatalf("seed translit: %v", err)
+	}
+	nine := 1
+	cs, err := attestation.Attestation(db, retriever.Ref{Book: "MRK", Chapter: 16, Verse: 9}, &nine, "TAGNT")
+	if err != nil {
+		t.Fatalf("attestation: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1", len(cs))
+	}
+	if cs[0].Translit != "anastas" {
+		t.Errorf("translit = %q, want anastas", cs[0].Translit)
 	}
 }
 

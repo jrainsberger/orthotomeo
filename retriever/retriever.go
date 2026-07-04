@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/verses"
 )
 
@@ -69,21 +70,80 @@ const (
 
 // Citation is one verbatim, provenance-bearing result row - the unit every
 // retriever call returns (Concord spec §5). Lemma/DStrong/Grammar/
-// Attestation/Editions are populated only by the tickets that carry them
+// Attestation/Manuscripts are populated only by the tickets that carry them
 // (T17/T18); T15 leaves them zero-valued.
+//
+// Citation deliberately does NOT carry its own source file (T31): every
+// Citation in a single-corpus call shares one Edition, and Edition is
+// already, unconditionally, the exact sources.json join key (every
+// construction site sets it to info.sourceCode/corpus verbatim) - repeating
+// the full file path per row was measured, real waste (an 18-word verse
+// repeated the identical string 18 times). SourcesFor builds the
+// once-per-distinct-edition lookup a caller wraps around a []Citation
+// instead.
 type Citation struct {
-	Ref           Ref        `json:"ref"`
-	Edition       string     `json:"edition"`
-	Text          string     `json:"text"`
-	SourceFile    string     `json:"source_file"`
-	SourceLocator string     `json:"source_locator"`
-	Lemma         string     `json:"lemma,omitempty"`
-	DStrong       string     `json:"dstrong,omitempty"`
-	Grammar       string     `json:"grammar,omitempty"`
-	Attestation   string     `json:"attestation,omitempty"`
-	Editions      string     `json:"editions,omitempty"`
-	Confidence    Confidence `json:"confidence"`
-	Caveat        string     `json:"caveat,omitempty"`
+	Ref         Ref        `json:"ref"`
+	Edition     string     `json:"edition"`
+	Text        string     `json:"text"`
+	Locator     string     `json:"locator"`
+	Lemma       string     `json:"lemma,omitempty"`
+	Translit    string     `json:"translit,omitempty"`
+	DStrong     string     `json:"dstrong,omitempty"`
+	Grammar     string     `json:"grammar,omitempty"`
+	Attestation string     `json:"attestation,omitempty"`
+	Manuscripts string     `json:"manuscripts,omitempty"`
+	Confidence  Confidence `json:"confidence"`
+	Caveat      string     `json:"caveat,omitempty"`
+}
+
+// SourceInfo is one edition's provenance metadata for the top-level
+// "sources" map every transport wraps around its Citations (T31) - added
+// once per distinct edition actually present in a result, never repeated
+// per Citation the way a per-row source file used to be. HomepageURL (T36) is
+// a human-facing reference link (the project's site/repo), distinct from
+// sources.Source's FetchURL (a download endpoint, only set for non-shippable
+// user-fetched sources) - it deliberately lives only here, not on cite.Cite's
+// per-line Markdown output, for the same reason SourceFile was moved out in
+// T31: it's identical across every row of a single-corpus result.
+type SourceInfo struct {
+	File        string `json:"file"`
+	License     string `json:"license"`
+	Attribution string `json:"attribution,omitempty"`
+	HomepageURL string `json:"homepage_url,omitempty"`
+}
+
+// SourcesFor collects the sources.json entry for every distinct edition
+// appearing in citations, keyed by edition code. A Citation with no Edition
+// (a placeholder row with nothing to cite at all) is skipped, not an error;
+// a real Edition code with no sources.json entry IS an error - it means the
+// corpus and the provenance registry have drifted out of sync, which
+// should never happen and must not be swallowed (invariant #3's spirit -
+// raise on a real inconsistency, don't guess).
+func SourcesFor(citations []Citation) (map[string]SourceInfo, error) {
+	reg, err := sources.Registry()
+	if err != nil {
+		return nil, fmt.Errorf("SourcesFor: %w", err)
+	}
+	byCode := make(map[string]sources.Source, len(reg))
+	for _, s := range reg {
+		byCode[s.Code] = s
+	}
+
+	out := make(map[string]SourceInfo)
+	for _, c := range citations {
+		if c.Edition == "" {
+			continue
+		}
+		if _, ok := out[c.Edition]; ok {
+			continue
+		}
+		s, ok := byCode[c.Edition]
+		if !ok {
+			return nil, fmt.Errorf("SourcesFor: edition %q has no sources.json entry", c.Edition)
+		}
+		out[c.Edition] = SourceInfo{File: s.SourceFile, License: s.License, Attribution: s.Attribution, HomepageURL: s.HomepageURL}
+	}
+	return out, nil
 }
 
 // editionInfo describes how one sources.code reaches a canonical Ref.
@@ -362,20 +422,15 @@ func GetVerse(db *sql.DB, ref Ref, editions []string) ([]Citation, error) {
 }
 
 func canonicalCitation(db *sql.DB, canonicalID int64, ref Ref, info editionInfo) (Citation, error) {
-	file, err := sourceFile(db, info.sourceCode)
-	if err != nil {
-		return Citation{}, err
-	}
-
 	var text, native string
-	err = db.QueryRow(`
+	err := db.QueryRow(`
 		SELECT text, native_ref FROM verse_text
 		WHERE verse_id = ? AND source_id = (SELECT id FROM sources WHERE code = ?)`,
 		canonicalID, info.sourceCode).Scan(&text, &native)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return Citation{
-			Ref: ref, Edition: info.sourceCode, SourceFile: file,
+			Ref: ref, Edition: info.sourceCode,
 			Confidence: ConfidenceFlagged,
 			Caveat:     fmt.Sprintf("no %s verse_text row for %s", info.sourceCode, ref),
 		}, nil
@@ -384,16 +439,11 @@ func canonicalCitation(db *sql.DB, canonicalID int64, ref Ref, info editionInfo)
 	}
 	return Citation{
 		Ref: ref, Edition: info.sourceCode, Text: text,
-		SourceFile: file, SourceLocator: native, Confidence: ConfidenceHigh,
+		Locator: native, Confidence: ConfidenceHigh,
 	}, nil
 }
 
 func alignedCitations(db *sql.DB, canonicalID int64, ref Ref, info editionInfo) ([]Citation, error) {
-	file, err := sourceFile(db, info.sourceCode)
-	if err != nil {
-		return nil, err
-	}
-
 	rows, err := db.Query(`
 		SELECT va.edition_verse_id, va.relation, va.confidence
 		FROM verse_alignment va
@@ -423,7 +473,8 @@ func alignedCitations(db *sql.DB, canonicalID int64, ref Ref, info editionInfo) 
 
 	if len(pairs) == 0 {
 		return []Citation{{
-			Ref: ref, Edition: info.sourceCode, SourceFile: file,
+			Ref:        ref,
+			Edition:    info.sourceCode,
 			Confidence: ConfidenceFlagged,
 			Caveat:     fmt.Sprintf("no %s alignment for %s (canonical-only content or an unaligned gap - T4b)", info.sourceCode, ref),
 		}}, nil
@@ -438,7 +489,7 @@ func alignedCitations(db *sql.DB, canonicalID int64, ref Ref, info editionInfo) 
 			a.editionVerseID, info.sourceCode).Scan(&text, &native); err != nil {
 			return nil, fmt.Errorf("alignedCitations %s text: %w", info.sourceCode, err)
 		}
-		c := Citation{Ref: ref, Edition: info.sourceCode, Text: text, SourceFile: file, SourceLocator: native}
+		c := Citation{Ref: ref, Edition: info.sourceCode, Text: text, Locator: native}
 		if a.relation == "exact" {
 			c.Confidence = ConfidenceHigh
 		} else {

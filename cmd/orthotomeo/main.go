@@ -19,8 +19,12 @@ import (
 // emits - an object, not a bare array, and the exact shape T27's HTTP JSON
 // responses are specified to reuse byte-for-byte (also matches the MCP
 // surface's citationsResult, so the three transports agree on one shape).
+// Sources is the T31 per-edition provenance map (file/license/attribution),
+// added once per distinct edition actually present - never repeated per
+// Citation the way a per-row source file used to be.
 type citationsPayload struct {
-	Citations []retriever.Citation `json:"citations"`
+	Citations []retriever.Citation            `json:"citations"`
+	Sources   map[string]retriever.SourceInfo `json:"sources,omitempty"`
 }
 
 func main() {
@@ -41,6 +45,10 @@ func main() {
 		err = runParse(args)
 	case "attest":
 		err = runAttest(args)
+	case "define":
+		err = runDefine(args)
+	case "interlinear":
+		err = runInterlinear(args)
 	case "-h", "--help", "help":
 		usage()
 		return
@@ -60,11 +68,14 @@ func usage() {
 
 Usage:
   orthotomeo lookup <ref> [--edition KJV,ASV,...] [--db path] [--json]
-  orthotomeo concord <lemma|dstrong> --corpus C [--phrase tok1,tok2 [--window N|--adjacent]] [--db path] [--json]
+  orthotomeo concord <lemma|dstrong|surface> --corpus C [--by lemma|dstrong|surface] [--phrase tok1,tok2 [--window N|--adjacent]] [--db path] [--json]
   orthotomeo parse <ref> --corpus C [--word N] [--db path] [--json]
   orthotomeo attest <ref> --corpus C [--word N] [--db path] [--json]
+  orthotomeo define <dstrong> [--db path] [--json]
+  orthotomeo interlinear <ref> --corpus C [--word N] [--db path] [--json]
 
 ref syntax: BOOK.CHAPTER.VERSE, e.g. MAT.26.28
+dstrong syntax: a disambiguated Strong's number, e.g. G0859, H7225G
 --db defaults to data/orthotomeo.db; the DB must already be built (cmd/build).`)
 }
 
@@ -80,7 +91,11 @@ func openEngine(dbPath string) (*engine.Engine, error) {
 // the citationsPayload JSON envelope when asJSON is set.
 func emit(e *engine.Engine, citations []retriever.Citation, asJSON bool) error {
 	if asJSON {
-		return writeJSON(citationsPayload{Citations: citations})
+		srcs, err := retriever.SourcesFor(citations)
+		if err != nil {
+			return err
+		}
+		return writeJSON(citationsPayload{Citations: citations, Sources: srcs})
 	}
 	fmt.Println(e.Cite(citations))
 	return nil

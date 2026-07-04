@@ -155,6 +155,46 @@ func TestLoadParsesWordFields(t *testing.T) {
 	}
 }
 
+// TestLoadExtractsTransliteration is the direct T32 test: the Greek column
+// carries "SURFACE (translit)" - the loader must split it, storing the
+// clean surface form (already covered by TestLoadParsesWordFields) AND the
+// transliteration, not silently discard the parenthetical as it did before.
+func TestLoadExtractsTransliteration(t *testing.T) {
+	db := setup(t)
+	if _, _, _, err := tagnt.Load(db, strings.NewReader(fixtureTAGNT)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var translit string
+	err := db.QueryRow(`SELECT translit FROM words WHERE source_locator = 'Jhn.1.1#02=NKO'`).Scan(&translit)
+	if err != nil {
+		t.Fatalf("query Jhn.1.1#02: %v", err)
+	}
+	if translit != "archē" {
+		t.Errorf("translit = %q, want archē", translit)
+	}
+}
+
+// TestLoadExtractsTransliterationForCompoundWord confirms transliteration is
+// captured even when dstrong/lemma are NULL (a compound-tagged word) - the
+// two are independent: a word can have no single dStrong yet still carry a
+// real, storable transliteration for its whole surface span.
+func TestLoadExtractsTransliterationForCompoundWord(t *testing.T) {
+	db := setup(t)
+	if _, _, _, err := tagnt.Load(db, strings.NewReader(fixtureTAGNT)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var translit string
+	err := db.QueryRow(`SELECT translit FROM words WHERE source_locator = 'Mat.4.6#26=NKO'`).Scan(&translit)
+	if err != nil {
+		t.Fatalf("query Mat.4.6#26: %v", err)
+	}
+	if translit != "mēpote" {
+		t.Errorf("translit = %q, want mēpote (transliteration survives even for a compound-tagged word)", translit)
+	}
+}
+
 func TestLoadVariantVerseIsAllK(t *testing.T) {
 	db := setup(t)
 	if _, _, _, err := tagnt.Load(db, strings.NewReader(fixtureTAGNT)); err != nil {

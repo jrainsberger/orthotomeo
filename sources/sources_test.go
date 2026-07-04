@@ -131,6 +131,46 @@ func TestSeedProvenanceSpotChecks(t *testing.T) {
 	}
 }
 
+// TestHomepageURLPopulatedExceptSwete is the T36 spot-check: every source has
+// a confirmed, human-facing reference URL (distinct from FetchURL, a download
+// endpoint only ever set for non-shippable sources) except Swete, whose
+// attribution says "via archive.org" but doesn't yet name the specific
+// archive.org item identifier - left blank rather than guessed, per this
+// corpus's own discipline against inventing a citation.
+func TestHomepageURLPopulatedExceptSwete(t *testing.T) {
+	reg, err := sources.Registry()
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	for _, s := range reg {
+		if s.Code == "Swete" {
+			if s.HomepageURL != "" {
+				t.Errorf("Swete: homepage_url = %q, want empty until the archive.org item is confirmed", s.HomepageURL)
+			}
+			continue
+		}
+		if s.HomepageURL == "" {
+			t.Errorf("%s: empty homepage_url, want a confirmed reference URL", s.Code)
+		}
+	}
+}
+
+// TestSeedRoundTripsHomepageURL confirms homepage_url actually reaches the
+// sources table (not just the in-memory Registry) via the real Seed insert.
+func TestSeedRoundTripsHomepageURL(t *testing.T) {
+	db := newDB(t)
+	if _, err := sources.Seed(db); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var url string
+	if err := db.QueryRow(`SELECT homepage_url FROM sources WHERE code = 'TAGNT'`).Scan(&url); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if url != "https://github.com/STEPBible/STEPBible-Data" {
+		t.Errorf("TAGNT homepage_url = %q, want the STEPBible-Data repo", url)
+	}
+}
+
 func TestSeedRejectsDuplicateCode(t *testing.T) {
 	db := newDB(t)
 	if _, err := sources.Seed(db); err != nil {

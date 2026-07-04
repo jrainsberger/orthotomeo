@@ -20,6 +20,8 @@ import (
 	"github.com/jrainsberger/orthotomeo/cite"
 	"github.com/jrainsberger/orthotomeo/concord"
 	"github.com/jrainsberger/orthotomeo/engine"
+	"github.com/jrainsberger/orthotomeo/interlinear"
+	"github.com/jrainsberger/orthotomeo/lexicon"
 	"github.com/jrainsberger/orthotomeo/retriever"
 )
 
@@ -90,8 +92,9 @@ type getPassageArgs struct {
 }
 
 type concordLemmaArgs struct {
-	Query  string `json:"query" jsonschema:"a lemma (e.g. ἄφεσις) or a disambiguated Strong's number (e.g. G0859, H7225G)"`
+	Query  string `json:"query" jsonschema:"a lemma (e.g. ἄφεσις), a disambiguated Strong's number (e.g. G0859, H7225G), or (with by=\"surface\") the exact inflected word as it appears in the verse"`
 	Corpus string `json:"corpus" jsonschema:"word-tagged corpus to search: TAGNT (Greek NT), TAHOT (Hebrew OT), Swete (LXX surface), OSS-LXX-lemma (LXX lemma)"`
+	By     string `json:"by,omitempty" jsonschema:"optional match column override: lemma, dstrong, or surface. Omit for auto-detect (dStrong shape, else lemma) - surface must always be requested explicitly, it is never guessed"`
 }
 
 type concordPhraseArgs struct {
@@ -101,8 +104,9 @@ type concordPhraseArgs struct {
 }
 
 type countArgs struct {
-	Query  string `json:"query" jsonschema:"a lemma or a disambiguated Strong's number, same as concord_lemma"`
+	Query  string `json:"query" jsonschema:"a lemma, dStrong, or (with by=\"surface\") exact inflected word, same as concord_lemma"`
 	Corpus string `json:"corpus" jsonschema:"word-tagged corpus: TAGNT, TAHOT, Swete, OSS-LXX-lemma"`
+	By     string `json:"by,omitempty" jsonschema:"optional match column override: lemma, dstrong, or surface, same as concord_lemma"`
 }
 
 type wordScopedArgs struct {
@@ -120,6 +124,10 @@ type lemmatizeArgs struct {
 	Corpus  string `json:"corpus" jsonschema:"word-tagged corpus: TAGNT, TAHOT, Swete, OSS-LXX-lemma"`
 }
 
+type lookupArgs struct {
+	DStrong string `json:"dstrong" jsonschema:"a disambiguated Strong's number, e.g. G0859, H7225G"`
+}
+
 type citeArgs struct {
 	Citations []retriever.Citation `json:"citations" jsonschema:"Citations previously returned by another tool call, to render as a pastable reference block"`
 }
@@ -128,12 +136,39 @@ type citeResult struct {
 	Text string `json:"text"`
 }
 
+// interlinearResult wraps interlinear.Build's output (T35) - same shape
+// convention as citationsResult, but Words instead of Citations since
+// interlinear.Word is a display composition (Citation + gloss), not a
+// Citation itself.
+type interlinearResult struct {
+	Words   []interlinear.Word              `json:"words"`
+	Sources map[string]retriever.SourceInfo `json:"sources,omitempty"`
+}
+
 // citationsResult wraps []retriever.Citation for tools that return it: the
 // MCP spec requires an object-typed output schema, and a bare JSON array
 // isn't one - every tool below that hands back a Citation slice wraps it
 // in this one field instead of inventing a bespoke wrapper each time.
+// Sources is the T31 per-edition provenance map (file/license/attribution),
+// added once per distinct edition actually present - never repeated per
+// Citation the way a per-row source file used to be.
 type citationsResult struct {
-	Citations []retriever.Citation `json:"citations"`
+	Citations []retriever.Citation            `json:"citations"`
+	Sources   map[string]retriever.SourceInfo `json:"sources,omitempty"`
+}
+
+// toCitationsResult is the one shared construction point for every tool
+// that hands back a Citation slice, so the Sources computation (T31) lives
+// in exactly one place rather than being repeated at each call site.
+func toCitationsResult(cs []retriever.Citation, err error) (citationsResult, error) {
+	if err != nil {
+		return citationsResult{}, err
+	}
+	srcs, err := retriever.SourcesFor(cs)
+	if err != nil {
+		return citationsResult{}, err
+	}
+	return citationsResult{Citations: cs, Sources: srcs}, nil
 }
 
 // registerTools wires every engine.Engine method to a typed MCP tool. Each
@@ -157,8 +192,8 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Description: "Returns verbatim verse text with provenance for one canonical reference, one Citation per requested edition (KJV, ASV, WEB, Brenton).",
 		InputSchema: schemaFor[getVerseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getVerseArgs) (*mcp.CallToolResult, citationsResult, error) {
-		cs, err := e.GetVerse(ref(in.Book, in.Chapter, in.Verse), in.Editions)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(e.GetVerse(ref(in.Book, in.Chapter, in.Verse), in.Editions))
+		return nil, res, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -170,17 +205,18 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 			Start: ref(in.Book, in.StartChapter, in.StartVerse),
 			End:   ref(in.Book, in.EndChapter, in.EndVerse),
 		}
-		cs, err := e.GetPassage(rr, in.Editions)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(e.GetPassage(rr, in.Editions))
+		return nil, res, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "concord_lemma",
-		Description: "Complete-or-fail concordance: every words row in corpus whose lemma or dStrong matches query. " +
-			"Route lemma/Strong's-number lookups here, never by writing SQL or guessing occurrences from memory.",
+		Description: "Complete-or-fail concordance: every words row in corpus whose lemma, dStrong, or (with by=\"surface\") " +
+			"exact inflected surface form matches query. Route lemma/Strong's-number/surface-word lookups here, " +
+			"never by writing SQL or guessing occurrences from memory.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in concordLemmaArgs) (*mcp.CallToolResult, citationsResult, error) {
-		cs, err := e.ConcordLemma(in.Query, in.Corpus)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(e.ConcordLemma(in.Query, in.Corpus, in.By))
+		return nil, res, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -190,15 +226,15 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 			"This is the tool for a phrase query like εἰς ἄφεσιν.",
 		InputSchema: schemaFor[concordPhraseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in concordPhraseArgs) (*mcp.CallToolResult, citationsResult, error) {
-		cs, err := e.ConcordPhrase(in.Tokens, in.Corpus, in.Window)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(e.ConcordPhrase(in.Tokens, in.Corpus, in.Window))
+		return nil, res, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "count",
 		Description: "Occurrence tally (total + per-book breakdown) for the identical query concord_lemma would match. count.Total always equals len(concord_lemma(...)) - use this to sanity-check a concordance result, or when only the number matters.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in countArgs) (*mcp.CallToolResult, concord.Tally, error) {
-		t, err := e.Count(in.Query, in.Corpus)
+		t, err := e.Count(in.Query, in.Corpus, in.By)
 		return nil, t, err
 	})
 
@@ -206,16 +242,32 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Name:        "parse",
 		Description: "Returns dStrong + expanded morphology (via the T6 morph_codes table) for every word in a verse, or one word if word is given. LXX corpora (Swete, OSS-LXX-lemma) are always Flagged - neither carries morphology.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in wordScopedArgs) (*mcp.CallToolResult, citationsResult, error) {
-		cs, err := parseTool(e, in)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(parseTool(e, in))
+		return nil, res, err
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "interlinear",
+		Description: "Returns a row-aligned reading view for every word in a verse (or one word, if word is given): original " +
+			"text, transliteration, gloss (via lexicon_lookup), and grammar stacked per word - the composed display shape " +
+			"for a study reading view, built on parse and lexicon_lookup rather than any new query.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in wordScopedArgs) (*mcp.CallToolResult, interlinearResult, error) {
+		if in.Word != nil && *in.Word < 1 {
+			return nil, interlinearResult{}, fmt.Errorf("word must be >= 1 (1-based), got %d", *in.Word)
+		}
+		words, srcs, err := e.Interlinear(ref(in.Book, in.Chapter, in.Verse), in.Word, in.Corpus)
+		if err != nil {
+			return nil, interlinearResult{}, err
+		}
+		return nil, interlinearResult{Words: words, Sources: srcs}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "lemmatize",
 		Description: "Returns the ordered lemma list for a verse (words with no lemma are omitted, not fabricated).",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in lemmatizeArgs) (*mcp.CallToolResult, citationsResult, error) {
-		cs, err := e.Lemmatize(ref(in.Book, in.Chapter, in.Verse), in.Corpus)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(e.Lemmatize(ref(in.Book, in.Chapter, in.Verse), in.Corpus))
+		return nil, res, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -223,8 +275,20 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		Description: "Returns the WHNT-style Type/Editions manuscript-tradition columns as neutral text-critical data " +
 			"(e.g. Mark 16:9-20 = Type KO) - which editions carry a word, with no argument for or against a variant.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in wordScopedArgs) (*mcp.CallToolResult, citationsResult, error) {
-		cs, err := attestationTool(e, in)
-		return nil, citationsResult{Citations: cs}, err
+		res, err := toCitationsResult(attestationTool(e, in))
+		return nil, res, err
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "lexicon_lookup",
+		Description: "Resolves a disambiguated Strong's number (dStrong) to its lexicon entry: lemma, transliteration, gloss, " +
+			"and - for a Greek entry only - a fuller definition (Abbott-Smith 1922, Public Domain). A Hebrew entry's " +
+			"definition field is always omitted: it is abridged BDB via Online Bible, which requires permission not yet " +
+			"obtained, so only its gloss is ever returned. Not to be confused with the get_verse/get_passage tools, which " +
+			"resolve a Ref to translated verse text, not a dStrong to a dictionary entry.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in lookupArgs) (*mcp.CallToolResult, lexicon.Entry, error) {
+		entry, err := e.Lookup(in.DStrong)
+		return nil, entry, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

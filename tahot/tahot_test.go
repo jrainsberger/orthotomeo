@@ -141,6 +141,49 @@ func TestLoadExtractsRootNotPrefix(t *testing.T) {
 	}
 }
 
+// TestLoadStoresTransliterationColumnVerbatim is the direct T32 test: TAHOT
+// carries transliteration as its own column (fields[2]), not embedded like
+// TAGNT's - the loader must actually read it instead of ignoring the column
+// entirely as it did before.
+func TestLoadStoresTransliterationColumnVerbatim(t *testing.T) {
+	db := setup(t)
+	if _, _, _, err := tahot.Load(db, strings.NewReader(fixtureTAHOT)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var translit string
+	err := db.QueryRow(`SELECT translit FROM words WHERE source_locator = 'Gen.1.1#01=L'`).Scan(&translit)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if translit != "be./re.Shit" {
+		t.Errorf("translit = %q, want be./re.Shit (verbatim from the Transliteration column)", translit)
+	}
+}
+
+// TestLoadNullsTransliterationWhenColumnIsBlank confirms a blank
+// transliteration field becomes SQL NULL, not an empty string masquerading
+// as "no value" - Exo.1.1#01 has no such field in this fixture (it's the
+// row skipped as out-of-spine, so instead verify directly against a
+// constructed blank case via Isa.44.24, whose Hebrew is blank but whose
+// Transliteration is the literal placeholder "[ ]" - proving the loader
+// stores whatever the source actually has, not a guessed substitute.
+func TestLoadPreservesPlaceholderTransliterationVerbatim(t *testing.T) {
+	db := setup(t)
+	if _, _, _, err := tahot.Load(db, strings.NewReader(fixtureTAHOT)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	var translit string
+	err := db.QueryRow(`SELECT translit FROM words WHERE source_locator = 'Isa.44.24#16=Q(K)'`).Scan(&translit)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if translit != "[ ]" {
+		t.Errorf("translit = %q, want the literal \"[ ]\" placeholder verbatim from the source", translit)
+	}
+}
+
 func TestLoadHandlesPlainSingleStrongWithBraces(t *testing.T) {
 	db := setup(t)
 	if _, _, _, err := tahot.Load(db, strings.NewReader(fixtureTAHOT)); err != nil {

@@ -167,6 +167,27 @@ func TestParseExpandsMorphCodeViaT6(t *testing.T) {
 	}
 }
 
+// TestParsePopulatesTranslit is the direct T32 test: buildCitation must
+// forward a words row's transliteration onto the Citation, the same as it
+// already does for Lemma/DStrong/Grammar.
+func TestParsePopulatesTranslit(t *testing.T) {
+	db := setup(t)
+	if _, err := db.Exec(`UPDATE words SET translit = 'aphesin' WHERE dstrong = 'G0859'`); err != nil {
+		t.Fatalf("seed translit: %v", err)
+	}
+	two := 2
+	cs, err := parse.Parse(db, retriever.Ref{Book: "MAT", Chapter: 1, Verse: 1}, &two, "TAGNT")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1", len(cs))
+	}
+	if cs[0].Translit != "aphesin" {
+		t.Errorf("translit = %q, want aphesin", cs[0].Translit)
+	}
+}
+
 func TestParseFlagsUnresolvedMorphCode(t *testing.T) {
 	db := setup(t)
 	one := 1

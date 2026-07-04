@@ -60,6 +60,11 @@ func buildFixture(t *testing.T) string {
 		t.Fatalf("seed morph_codes: %v", err)
 	}
 	if _, err := db.Exec(`
+		INSERT INTO lexicon (dstrong, estrong, ustrong, language, lemma, translit, gloss, definition, def_license)
+		VALUES ('G0859', 'G0859', 'G0859', 'grc', 'ἄφεσις', 'aphesis', 'forgiveness', 'release, pardon', 'Abbott-Smith PD')`); err != nil {
+		t.Fatalf("seed lexicon: %v", err)
+	}
+	if _, err := db.Exec(`
 		INSERT INTO verse_text (verse_id, source_id, native_ref, text)
 		VALUES (?, (SELECT id FROM sources WHERE code = 'KJV'), 'Mat.26.28', 'blood of the new testament')`, verseID); err != nil {
 		t.Fatalf("insert verse_text: %v", err)
@@ -91,13 +96,13 @@ func TestEngineReachesEveryPhase5Operation(t *testing.T) {
 	if cs, err := e.GetPassage(rr, []string{"KJV"}); err != nil || len(cs) != 1 {
 		t.Errorf("GetPassage: cs=%v err=%v", cs, err)
 	}
-	if cs, err := e.ConcordLemma("G0859", "TAGNT"); err != nil || len(cs) != 1 {
+	if cs, err := e.ConcordLemma("G0859", "TAGNT", ""); err != nil || len(cs) != 1 {
 		t.Errorf("ConcordLemma: cs=%v err=%v", cs, err)
 	}
 	if cs, err := e.ConcordPhrase([]string{"εἰς", "ἄφεσις"}, "TAGNT", 0); err != nil || len(cs) != 1 {
 		t.Errorf("ConcordPhrase: cs=%v err=%v", cs, err)
 	}
-	if _, err := e.Count("G0859", "TAGNT"); err != nil {
+	if _, err := e.Count("G0859", "TAGNT", ""); err != nil {
 		t.Errorf("Count: %v", err)
 	}
 	if cs, err := e.Parse(ref, nil, "TAGNT"); err != nil || len(cs) != 2 {
@@ -112,6 +117,9 @@ func TestEngineReachesEveryPhase5Operation(t *testing.T) {
 	if s := e.Cite([]retriever.Citation{{Ref: ref, Edition: "TAGNT", Text: "ἄφεσιν"}}); s == "" {
 		t.Error("Cite returned empty for a non-empty input")
 	}
+	if entry, err := e.Lookup("G0859"); err != nil || entry.Gloss != "forgiveness" {
+		t.Errorf("Lookup: entry=%+v err=%v", entry, err)
+	}
 }
 
 func TestCountAgreesWithConcordLemmaThroughFacade(t *testing.T) {
@@ -122,11 +130,11 @@ func TestCountAgreesWithConcordLemmaThroughFacade(t *testing.T) {
 	}
 	defer e.Close()
 
-	cs, err := e.ConcordLemma("G0859", "TAGNT")
+	cs, err := e.ConcordLemma("G0859", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("ConcordLemma: %v", err)
 	}
-	tally, err := e.Count("G0859", "TAGNT")
+	tally, err := e.Count("G0859", "TAGNT", "")
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}

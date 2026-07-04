@@ -51,12 +51,77 @@ func TestLoadSkipsFrontMatterAndExtractsDStrong(t *testing.T) {
 		t.Errorf("inserted %d, want 2", n)
 	}
 
-	lemma, gloss, err := lexicon.Lookup(db, "G0746")
+	e, err := lexicon.Lookup(db, "G0746")
 	if err != nil {
 		t.Fatalf("lookup G0746: %v", err)
 	}
-	if lemma != "ἀρχή" || gloss != "beginning" {
-		t.Errorf("G0746 = %q/%q, want ἀρχή/beginning", lemma, gloss)
+	if e.Lemma != "ἀρχή" || e.Gloss != "beginning" {
+		t.Errorf("G0746 = %q/%q, want ἀρχή/beginning", e.Lemma, e.Gloss)
+	}
+}
+
+// TestLookupPopulatesDefinitionForGreek is the direct T34 test: a Greek
+// (TBESG) entry's definition is Abbott-Smith 1922, Public Domain - clear to
+// expose, so Lookup must return it, not silently withhold it too.
+func TestLookupPopulatesDefinitionForGreek(t *testing.T) {
+	db := setup(t)
+	if _, err := lexicon.Load(db, strings.NewReader(fixtureTBESG), "grc", "Abbott-Smith PD"); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	e, err := lexicon.Lookup(db, "G0746")
+	if err != nil {
+		t.Fatalf("lookup G0746: %v", err)
+	}
+	if e.Definition == nil {
+		t.Fatal("Definition = nil, want the Abbott-Smith text for a Greek entry")
+	}
+	if !strings.Contains(*e.Definition, "beginning, origin") {
+		t.Errorf("Definition = %q, want it to contain the fixture's Abbott-Smith text", *e.Definition)
+	}
+	if e.Translit != "archē" {
+		t.Errorf("translit = %q, want archē", e.Translit)
+	}
+}
+
+// TestLookupWithholdsDefinitionForHebrew is the direct T34 license-gate
+// test: a Hebrew (TBESH) entry's definition column IS present in the source
+// data (loaded, not blank), but Lookup must return Definition == nil anyway -
+// the gate is the license (BDB via Online Bible, permission required), not
+// whether the column happens to be empty.
+func TestLookupWithholdsDefinitionForHebrew(t *testing.T) {
+	db := setup(t)
+	if _, err := lexicon.Load(db, strings.NewReader(fixtureTBESH), "he", "BDB/Online Bible - permission"); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	e, err := lexicon.Lookup(db, "H0001G")
+	if err != nil {
+		t.Fatalf("lookup H0001G: %v", err)
+	}
+	if e.Gloss != "father" {
+		t.Errorf("gloss = %q, want father (gloss is always clear to expose)", e.Gloss)
+	}
+	if e.Definition != nil {
+		t.Errorf("Definition = %q, want nil - Hebrew definitions are withheld pending permission (T34)", *e.Definition)
+	}
+
+	var rawDefinition string
+	if err := db.QueryRow(`SELECT definition FROM lexicon WHERE dstrong = 'H0001G'`).Scan(&rawDefinition); err != nil {
+		t.Fatalf("query raw definition: %v", err)
+	}
+	if rawDefinition != "father of an individual" {
+		t.Fatalf("test fixture assumption broken: raw definition = %q, want a non-empty value so this test actually proves withholding, not just an empty column", rawDefinition)
+	}
+}
+
+// TestLookupUnknownDStrongReturnsError confirms a miss is a real error, not
+// a zero-value Entry indistinguishable from "found, but empty."
+func TestLookupUnknownDStrongReturnsError(t *testing.T) {
+	db := setup(t)
+	if _, err := lexicon.Load(db, strings.NewReader(fixtureTBESG), "grc", "Abbott-Smith PD"); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, err := lexicon.Lookup(db, "G9999"); err == nil {
+		t.Fatal("expected an error for an unknown dStrong")
 	}
 }
 

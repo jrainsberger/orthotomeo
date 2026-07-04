@@ -88,8 +88,8 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedVerse, untagged int, err er
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO words (verse_id, source_id, word_no, surface, lemma, dstrong, morph_code, attestation, editions, source_locator)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		INSERT INTO words (verse_id, source_id, word_no, surface, lemma, dstrong, morph_code, attestation, editions, source_locator, translit)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("prepare: %w", err)
 	}
@@ -125,7 +125,7 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedVerse, untagged int, err er
 			untagged++
 		}
 
-		if _, err := stmt.Exec(verseID, sourceID, wordNum, surface, lemma, dstrong, morphCode, attestation, "", fields[0]); err != nil {
+		if _, err := stmt.Exec(verseID, sourceID, wordNum, surface, lemma, dstrong, morphCode, attestation, "", fields[0], nullIfEmpty(fields[2])); err != nil {
 			return 0, 0, 0, fmt.Errorf("insert %s: %w", fields[0], err)
 		}
 		inserted++
@@ -138,6 +138,17 @@ func Load(db *sql.DB, r io.Reader) (inserted, skippedVerse, untagged int, err er
 		return 0, 0, 0, fmt.Errorf("commit: %w", err)
 	}
 	return inserted, skippedVerse, untagged, nil
+}
+
+// nullIfEmpty turns "" into SQL NULL rather than storing an empty string -
+// "no transliteration" should read the same as "the column doesn't apply
+// here" (Swete/OSS-LXX-lemma rows, which never call this at all), not as a
+// distinct empty-vs-absent state.
+func nullIfEmpty(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
 }
 
 // rootFields locates the root (braced) "/"-segment shared by the dStrongs,

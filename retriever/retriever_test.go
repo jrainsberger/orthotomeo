@@ -214,8 +214,15 @@ func TestGetVerseReturnsVerbatimTextWithProvenance(t *testing.T) {
 	if c.Text != "In the beginning..." {
 		t.Errorf("text = %q", c.Text)
 	}
-	if c.SourceFile == "" || c.SourceLocator != "Gen.1.1" {
-		t.Errorf("provenance incomplete: file=%q locator=%q", c.SourceFile, c.SourceLocator)
+	if c.Locator != "Gen.1.1" {
+		t.Errorf("locator = %q, want Gen.1.1", c.Locator)
+	}
+	srcs, err := retriever.SourcesFor(cs)
+	if err != nil {
+		t.Fatalf("SourcesFor: %v", err)
+	}
+	if srcs["KJV"].File == "" {
+		t.Errorf("SourcesFor[%q].File is empty, want the KJV source file", "KJV")
 	}
 	if c.Confidence != retriever.ConfidenceHigh {
 		t.Errorf("confidence = %q, want High", c.Confidence)
@@ -238,8 +245,8 @@ func TestGetVerseSurfacesDivergenceNotSilentShift(t *testing.T) {
 	if c.Text == "" {
 		t.Error("text is empty even though a renumbered Brenton row exists")
 	}
-	if c.SourceLocator != "9:2" {
-		t.Errorf("locator = %q, want the Brenton edition's own 9:2 (not a silently reused canonical 9:1)", c.SourceLocator)
+	if c.Locator != "9:2" {
+		t.Errorf("locator = %q, want the Brenton edition's own 9:2 (not a silently reused canonical 9:1)", c.Locator)
 	}
 	if c.Confidence != retriever.ConfidenceFlagged {
 		t.Errorf("confidence = %q, want Flagged for a non-exact alignment", c.Confidence)
@@ -307,4 +314,77 @@ func containsSubstring(list []string, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestSourcesForDedupsByEdition is the direct test for T31's dedup
+// mechanism: many Citations from the same edition collapse to exactly one
+// "sources" entry, keyed by Edition - not one per Citation the way a
+// per-row source file used to be.
+func TestSourcesForDedupsByEdition(t *testing.T) {
+	cs := []retriever.Citation{
+		{Edition: "TAHOT", Locator: "Lev.17.11#01=L"},
+		{Edition: "TAHOT", Locator: "Lev.17.11#02=L"},
+		{Edition: "TAHOT", Locator: "Lev.17.11#03=L"},
+	}
+	srcs, err := retriever.SourcesFor(cs)
+	if err != nil {
+		t.Fatalf("SourcesFor: %v", err)
+	}
+	if len(srcs) != 1 {
+		t.Fatalf("sources = %d, want exactly 1 (all three Citations share one edition)", len(srcs))
+	}
+	info, ok := srcs["TAHOT"]
+	if !ok {
+		t.Fatal(`sources["TAHOT"] missing`)
+	}
+	if info.File == "" {
+		t.Error("File is empty, want the real TAHOT source_file from sources.json")
+	}
+	if info.License != "CC BY 4.0" {
+		t.Errorf("License = %q, want %q (matches sources.json)", info.License, "CC BY 4.0")
+	}
+	if info.Attribution == "" {
+		t.Error("Attribution is empty, want STEPBible.org's attribution string")
+	}
+}
+
+// TestSourcesForCoversMultipleDistinctEditions confirms the map grows by
+// distinct edition, not by Citation count - a get_verse-style call over
+// KJV+ASV+WEB gets exactly three entries regardless of how many verses.
+func TestSourcesForCoversMultipleDistinctEditions(t *testing.T) {
+	cs := []retriever.Citation{
+		{Edition: "KJV"}, {Edition: "ASV"}, {Edition: "WEB"},
+		{Edition: "KJV"}, {Edition: "ASV"}, {Edition: "WEB"}, // second verse, same editions
+	}
+	srcs, err := retriever.SourcesFor(cs)
+	if err != nil {
+		t.Fatalf("SourcesFor: %v", err)
+	}
+	if len(srcs) != 3 {
+		t.Fatalf("sources = %d, want exactly 3 (KJV, ASV, WEB), got %v", len(srcs), srcs)
+	}
+}
+
+// TestSourcesForSkipsEmptyEditionPlaceholders covers a Citation with no
+// Edition at all (a "nothing here" placeholder some paths return) - it
+// must be skipped, not treated as an unknown-edition error.
+func TestSourcesForSkipsEmptyEditionPlaceholders(t *testing.T) {
+	cs := []retriever.Citation{{Edition: "KJV"}, {Edition: ""}}
+	srcs, err := retriever.SourcesFor(cs)
+	if err != nil {
+		t.Fatalf("SourcesFor: %v", err)
+	}
+	if len(srcs) != 1 {
+		t.Fatalf("sources = %d, want exactly 1 (the empty-edition placeholder must not produce an entry)", len(srcs))
+	}
+}
+
+// TestSourcesForErrorsOnUnknownEdition: a real (non-empty) edition code
+// with no sources.json entry means the corpus and the provenance registry
+// have drifted - that must raise, never be silently dropped.
+func TestSourcesForErrorsOnUnknownEdition(t *testing.T) {
+	cs := []retriever.Citation{{Edition: "NOT-A-REAL-EDITION"}}
+	if _, err := retriever.SourcesFor(cs); err == nil {
+		t.Fatal("expected an error for an edition with no sources.json entry")
+	}
 }

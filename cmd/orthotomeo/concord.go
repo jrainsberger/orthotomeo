@@ -13,6 +13,7 @@ func runConcord(args []string) error {
 	phrase := fs.String("phrase", "", "comma-separated ordered lemma tokens - switches to ConcordPhrase, ignoring the positional query")
 	window := fs.Int("window", 0, "max words between consecutive phrase tokens (0 = strictly adjacent)")
 	adjacent := fs.Bool("adjacent", false, "shorthand for --window 0 (the default already, provided for explicitness)")
+	by := fs.String("by", "", "match column override: lemma, dstrong, or surface (default: auto-detect dStrong shape, else lemma - surface must be requested explicitly)")
 	asJSON := fs.Bool("json", false, "emit the citationsPayload JSON envelope instead of Markdown")
 	fs.Parse(args)
 
@@ -40,9 +41,9 @@ func runConcord(args []string) error {
 	}
 
 	if fs.NArg() != 1 {
-		return errUsage("concord <lemma|dstrong> --corpus C [--phrase tok1,tok2 [--window N|--adjacent]] [--db path] [--json]")
+		return errUsage("concord <lemma|dstrong|surface> --corpus C [--by lemma|dstrong|surface] [--phrase tok1,tok2 [--window N|--adjacent]] [--db path] [--json]")
 	}
-	cs, err := e.ConcordLemma(fs.Arg(0), *corpus)
+	cs, err := e.ConcordLemma(fs.Arg(0), *corpus, *by)
 	if err != nil {
 		return err
 	}

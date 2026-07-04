@@ -26,6 +26,7 @@ type Source struct {
 	Format      string `json:"format"`
 	Shippable   bool   `json:"shippable"`
 	FetchURL    string `json:"fetch_url"`
+	HomepageURL string `json:"homepage_url,omitempty"`
 }
 
 //go:embed sources.json
@@ -56,8 +57,8 @@ func Seed(db *sql.DB) (int, error) {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO sources
-			(code, full_name, language, type, license, attribution, source_file, format, shippable, fetch_url)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			(code, full_name, language, type, license, attribution, source_file, format, shippable, fetch_url, homepage_url)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare insert: %w", err)
 	}
@@ -66,7 +67,7 @@ func Seed(db *sql.DB) (int, error) {
 	for _, s := range reg {
 		if _, err := stmt.Exec(
 			s.Code, s.FullName, s.Language, s.Type, s.License,
-			s.Attribution, s.SourceFile, s.Format, s.Shippable, s.FetchURL,
+			s.Attribution, s.SourceFile, s.Format, s.Shippable, s.FetchURL, s.HomepageURL,
 		); err != nil {
 			return 0, fmt.Errorf("insert source %q: %w", s.Code, err)
 		}

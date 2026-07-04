@@ -13,6 +13,8 @@ import (
 	"github.com/jrainsberger/orthotomeo/attestation"
 	"github.com/jrainsberger/orthotomeo/cite"
 	"github.com/jrainsberger/orthotomeo/concord"
+	"github.com/jrainsberger/orthotomeo/interlinear"
+	"github.com/jrainsberger/orthotomeo/lexicon"
 	"github.com/jrainsberger/orthotomeo/parse"
 	"github.com/jrainsberger/orthotomeo/retriever"
 
@@ -73,10 +75,12 @@ func (e *Engine) GetPassage(rr retriever.RefRange, editions []string) ([]retriev
 
 // --- T16: concordance ---
 
-// ConcordLemma returns every words row in corpus whose lemma or dStrong
-// (auto-detected from query's shape) matches - complete or an error.
-func (e *Engine) ConcordLemma(query, corpus string) ([]retriever.Citation, error) {
-	return concord.ConcordLemma(e.db, query, corpus)
+// ConcordLemma returns every words row in corpus whose lemma, dStrong, or
+// surface form matches query - by picks the column explicitly ("lemma",
+// "dstrong", "surface"), or "" for the original auto-detect (dStrong shape,
+// else lemma) - complete or an error.
+func (e *Engine) ConcordLemma(query, corpus, by string) ([]retriever.Citation, error) {
+	return concord.ConcordLemma(e.db, query, corpus, by)
 }
 
 // ConcordPhrase finds every occurrence, within one verse, of tokens
@@ -87,9 +91,9 @@ func (e *Engine) ConcordPhrase(tokens []string, corpus string, window int) ([]re
 }
 
 // Count returns the occurrence tally for the same query ConcordLemma would
-// match - Count(q, c).Total == len(ConcordLemma(q, c)) always.
-func (e *Engine) Count(query, corpus string) (concord.Tally, error) {
-	return concord.Count(e.db, query, corpus)
+// match - Count(q, c, by).Total == len(ConcordLemma(q, c, by)) always.
+func (e *Engine) Count(query, corpus, by string) (concord.Tally, error) {
+	return concord.Count(e.db, query, corpus, by)
 }
 
 // --- T17: parse / lemmatize ---
@@ -103,6 +107,29 @@ func (e *Engine) Parse(ref retriever.Ref, word *int, corpus string) ([]retriever
 // Lemmatize returns the ordered lemma list for ref in corpus.
 func (e *Engine) Lemmatize(ref retriever.Ref, corpus string) ([]retriever.Citation, error) {
 	return parse.Lemmatize(e.db, ref, corpus)
+}
+
+// Interlinear composes T35's row-aligned original/transliteration/gloss/
+// grammar display over a Parse result - a display shape, not a new query:
+// every field comes from Parse (T17/T32) or lexicon.Lookup (T34). Also
+// returns the T31 per-edition sources map for the underlying Citations,
+// same as every other Citation-bearing method's transport wrapper does -
+// computed here (not by asking the caller to re-run Parse) since Build
+// consumes the Citations directly.
+func (e *Engine) Interlinear(ref retriever.Ref, word *int, corpus string) ([]interlinear.Word, map[string]retriever.SourceInfo, error) {
+	cs, err := parse.Parse(e.db, ref, word, corpus)
+	if err != nil {
+		return nil, nil, err
+	}
+	words, err := interlinear.Build(e.db, cs)
+	if err != nil {
+		return nil, nil, err
+	}
+	srcs, err := retriever.SourcesFor(cs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return words, srcs, nil
 }
 
 // --- T18: attestation ---
@@ -120,4 +147,13 @@ func (e *Engine) Attestation(ref retriever.Ref, word *int, corpus string) ([]ret
 // needs its own import of the cite package either.
 func (e *Engine) Cite(citations []retriever.Citation) string {
 	return cite.Cite(citations)
+}
+
+// --- T34: lexicon / Strong's lookup ---
+
+// Lookup resolves dstrong to its lexicon entry - gloss and translit always,
+// definition only for a Greek row (a Hebrew row's definition is withheld
+// pending permission - lexicon.Entry doc comment, T34).
+func (e *Engine) Lookup(dstrong string) (lexicon.Entry, error) {
+	return lexicon.Lookup(e.db, dstrong)
 }

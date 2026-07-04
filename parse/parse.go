@@ -94,12 +94,14 @@ type wordRow struct {
 	wordNo                                                    int
 	surface, lemma, dstrong, morphCode, attestation, editions string
 	sourceLocator                                             string
+	translit                                                  string
 }
 
 func wordsAt(db *sql.DB, verseID int64, corpus string, word *int) ([]wordRow, error) {
 	query := `
 		SELECT word_no, COALESCE(surface,''), COALESCE(lemma,''), COALESCE(dstrong,''),
-		       COALESCE(morph_code,''), attestation, editions, source_locator
+		       COALESCE(morph_code,''), attestation, editions, source_locator,
+		       COALESCE(translit,'')
 		FROM words
 		WHERE verse_id = ? AND source_id = (SELECT id FROM sources WHERE code = ?)`
 	args := []any{verseID, corpus}
@@ -118,7 +120,8 @@ func wordsAt(db *sql.DB, verseID int64, corpus string, word *int) ([]wordRow, er
 	var out []wordRow
 	for rows.Next() {
 		var w wordRow
-		if err := rows.Scan(&w.wordNo, &w.surface, &w.lemma, &w.dstrong, &w.morphCode, &w.attestation, &w.editions, &w.sourceLocator); err != nil {
+		if err := rows.Scan(&w.wordNo, &w.surface, &w.lemma, &w.dstrong, &w.morphCode, &w.attestation, &w.editions, &w.sourceLocator,
+			&w.translit); err != nil {
 			return nil, fmt.Errorf("wordsAt scan: %w", err)
 		}
 		out = append(out, w)
@@ -127,11 +130,6 @@ func wordsAt(db *sql.DB, verseID int64, corpus string, word *int) ([]wordRow, er
 }
 
 func buildCitation(db *sql.DB, ref retriever.Ref, corpus string, tgt retriever.AlignedVerse, w wordRow) (retriever.Citation, error) {
-	file, err := sourceFile(db, corpus)
-	if err != nil {
-		return retriever.Citation{}, err
-	}
-
 	var caveats []string
 	confidence := retriever.ConfidenceHigh
 	if tgt.Relation != "exact" {
@@ -161,9 +159,9 @@ func buildCitation(db *sql.DB, ref retriever.Ref, corpus string, tgt retriever.A
 
 	return retriever.Citation{
 		Ref: ref, Edition: corpus, Text: displayText(w),
-		SourceFile: file, SourceLocator: w.sourceLocator,
-		Lemma: w.lemma, DStrong: w.dstrong, Grammar: grammar,
-		Attestation: w.attestation, Editions: w.editions,
+		Locator: w.sourceLocator,
+		Lemma:   w.lemma, Translit: w.translit, DStrong: w.dstrong, Grammar: grammar,
+		Attestation: w.attestation, Manuscripts: w.editions,
 		Confidence: confidence, Caveat: strings.Join(caveats, "; "),
 	}, nil
 }
@@ -202,12 +200,4 @@ func displayText(w wordRow) string {
 
 func noDataCitation(ref retriever.Ref, corpus, caveat string) retriever.Citation {
 	return retriever.Citation{Ref: ref, Edition: corpus, Confidence: retriever.ConfidenceFlagged, Caveat: caveat}
-}
-
-func sourceFile(db *sql.DB, code string) (string, error) {
-	var f string
-	if err := db.QueryRow(`SELECT source_file FROM sources WHERE code = ?`, code).Scan(&f); err != nil {
-		return "", fmt.Errorf("sourceFile %s: %w", code, err)
-	}
-	return f, nil
 }

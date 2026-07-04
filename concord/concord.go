@@ -28,7 +28,19 @@ type Tally struct {
 // disambiguation letters).
 var dstrongRe = regexp.MustCompile(`^[GH]\d{2,5}[A-Za-z]{0,2}$`)
 
-func matchColumn(query string) string {
+// matchColumn picks the words column a query matches against. An explicit
+// by ("lemma", "dstrong", or "surface") always wins - T33 added "surface" as
+// a match a caller must request explicitly, not one auto-detected from the
+// query string: unlike a dStrong number (a fixed, unambiguous shape - see
+// dstrongRe), a surface form and its lemma can look identical or wildly
+// different depending on inflection, so guessing which one the caller meant
+// would be exactly the "infer from shape" magic this corpus avoids elsewhere.
+// With by == "", the original two-way auto-detect (dStrong shape, else
+// lemma) is unchanged - existing callers see no behavior change.
+func matchColumn(query, by string) string {
+	if by != "" {
+		return by
+	}
 	if dstrongRe.MatchString(query) {
 		return "dstrong"
 	}
@@ -41,21 +53,24 @@ func columnExpr(col string) (string, error) {
 		return "w.dstrong", nil
 	case "lemma":
 		return "w.lemma", nil
+	case "surface":
+		return "w.surface", nil
 	default:
-		return "", fmt.Errorf("columnExpr: unknown match column %q", col)
+		return "", fmt.Errorf("columnExpr: unknown match column %q (want lemma, dstrong, or surface)", col)
 	}
 }
 
-// ConcordLemma returns every words row in corpus whose lemma or dStrong
-// (auto-detected from query's shape) matches - the complete set or an
-// error, never a silent partial read.
-func ConcordLemma(db *sql.DB, query, corpus string) ([]retriever.Citation, error) {
+// ConcordLemma returns every words row in corpus whose lemma, dStrong, or
+// surface form matches query - by selects the column explicitly ("lemma",
+// "dstrong", "surface"), or "" for the original auto-detect (dStrong shape,
+// else lemma) - the complete set or an error, never a silent partial read.
+func ConcordLemma(db *sql.DB, query, corpus, by string) ([]retriever.Citation, error) {
 	sourceID, err := validateCorpus(db, corpus)
 	if err != nil {
 		return nil, err
 	}
 	query = lexnorm.NFC(query)
-	col := matchColumn(query)
+	col := matchColumn(query, by)
 
 	want, err := countMatches(db, col, query, sourceID)
 	if err != nil {
@@ -69,11 +84,6 @@ func ConcordLemma(db *sql.DB, query, corpus string) ([]retriever.Citation, error
 		return nil, err
 	}
 
-	file, err := sourceFile(db, corpus)
-	if err != nil {
-		return nil, err
-	}
-
 	cites := make([]retriever.Citation, 0, len(rows))
 	for _, w := range rows {
 		ref, confidence, caveat, err := resolveCanonicalRef(db, w, corpus)
@@ -82,9 +92,9 @@ func ConcordLemma(db *sql.DB, query, corpus string) ([]retriever.Citation, error
 		}
 		cites = append(cites, retriever.Citation{
 			Ref: ref, Edition: corpus, Text: displayText(w),
-			SourceFile: file, SourceLocator: w.sourceLocator,
-			Lemma: w.lemma, DStrong: w.dstrong, Grammar: w.morphCode,
-			Attestation: w.attestation, Editions: w.editions,
+			Locator: w.sourceLocator,
+			Lemma:   w.lemma, Translit: w.translit, DStrong: w.dstrong, Grammar: w.morphCode,
+			Attestation: w.attestation, Manuscripts: w.editions,
 			Confidence: confidence, Caveat: caveat,
 		})
 	}
@@ -93,16 +103,16 @@ func ConcordLemma(db *sql.DB, query, corpus string) ([]retriever.Citation, error
 
 // Count returns the occurrence tally for the same query ConcordLemma would
 // match - a caller who only needs numbers doesn't have to materialize every
-// Citation. Count(query, corpus).Total always equals
-// len(ConcordLemma(query, corpus)) by construction (both run the identical
-// WHERE clause).
-func Count(db *sql.DB, query, corpus string) (Tally, error) {
+// Citation. Count(query, corpus, by).Total always equals
+// len(ConcordLemma(query, corpus, by)) by construction (both run the
+// identical WHERE clause).
+func Count(db *sql.DB, query, corpus, by string) (Tally, error) {
 	sourceID, err := validateCorpus(db, corpus)
 	if err != nil {
 		return Tally{}, err
 	}
 	query = lexnorm.NFC(query)
-	col := matchColumn(query)
+	col := matchColumn(query, by)
 
 	total, err := countMatches(db, col, query, sourceID)
 	if err != nil {
@@ -161,11 +171,6 @@ func ConcordPhrase(db *sql.DB, tokens []string, corpus string, window int) ([]re
 		}
 	}
 
-	file, err := sourceFile(db, corpus)
-	if err != nil {
-		return nil, err
-	}
-
 	cites := make([]retriever.Citation, 0, len(chains))
 	for _, chain := range chains {
 		ref, confidence, caveat, err := resolveCanonicalRef(db, chain[0], corpus)
@@ -178,8 +183,9 @@ func ConcordPhrase(db *sql.DB, tokens []string, corpus string, window int) ([]re
 		}
 		cites = append(cites, retriever.Citation{
 			Ref: ref, Edition: corpus, Text: strings.Join(parts, " "),
-			SourceFile: file, SourceLocator: chain[0].sourceLocator,
+			Locator:    chain[0].sourceLocator,
 			Lemma:      strings.Join(tokens, " "),
+			Translit:   chainTranslit(chain),
 			Confidence: confidence, Caveat: caveat,
 		})
 	}
@@ -213,7 +219,8 @@ func nextTokenInVerse(db *sql.DB, after wordRow, lemma string, sourceID int64, w
 	row := db.QueryRow(`
 		SELECT w.id, w.verse_id, v.book_id, v.chapter, v.verse, w.word_no,
 		       COALESCE(w.surface,''), COALESCE(w.lemma,''), COALESCE(w.dstrong,''),
-		       COALESCE(w.morph_code,''), w.attestation, w.editions, w.source_locator
+		       COALESCE(w.morph_code,''), w.attestation, w.editions, w.source_locator,
+		       COALESCE(w.translit,'')
 		FROM words w JOIN verses v ON v.id = w.verse_id
 		WHERE w.verse_id = ? AND w.lemma = ? AND w.source_id = ? AND w.word_no > ? AND w.word_no <= ?
 		ORDER BY w.word_no LIMIT 1`,
@@ -259,6 +266,7 @@ type wordRow struct {
 	dstrong, morphCode     string
 	attestation, editions  string
 	sourceLocator          string
+	translit               string
 }
 
 func wordsMatching(db *sql.DB, col, value string, sourceID int64) ([]wordRow, error) {
@@ -269,7 +277,8 @@ func wordsMatching(db *sql.DB, col, value string, sourceID int64) ([]wordRow, er
 	query := fmt.Sprintf(`
 		SELECT w.id, w.verse_id, v.book_id, v.chapter, v.verse, w.word_no,
 		       COALESCE(w.surface,''), COALESCE(w.lemma,''), COALESCE(w.dstrong,''),
-		       COALESCE(w.morph_code,''), w.attestation, w.editions, w.source_locator
+		       COALESCE(w.morph_code,''), w.attestation, w.editions, w.source_locator,
+		       COALESCE(w.translit,'')
 		FROM words w JOIN verses v ON v.id = w.verse_id
 		WHERE %s = ? AND w.source_id = ?
 		ORDER BY v.chapter, v.verse, w.word_no`, expr)
@@ -340,7 +349,8 @@ type rowScanner interface {
 func scanWordRow(r rowScanner) (wordRow, error) {
 	var w wordRow
 	err := r.Scan(&w.id, &w.verseID, &w.bookID, &w.chapter, &w.verse, &w.wordNo,
-		&w.surface, &w.lemma, &w.dstrong, &w.morphCode, &w.attestation, &w.editions, &w.sourceLocator)
+		&w.surface, &w.lemma, &w.dstrong, &w.morphCode, &w.attestation, &w.editions, &w.sourceLocator,
+		&w.translit)
 	return w, err
 }
 
@@ -354,6 +364,23 @@ func displayText(w wordRow) string {
 		return w.surface
 	}
 	return w.lemma
+}
+
+// chainTranslit joins a ConcordPhrase chain's per-word transliterations,
+// same as Text joins their surface forms - but only when every word in the
+// chain actually has one. A partial join (one real word, one blank gap)
+// would misrepresent the phrase's pronunciation rather than honestly
+// showing "not available for this phrase" (empty, T32 - a source with no
+// transliteration column, like Swete/OSS-LXX-lemma, never has one to join).
+func chainTranslit(chain []wordRow) string {
+	parts := make([]string, len(chain))
+	for i, w := range chain {
+		if w.translit == "" {
+			return ""
+		}
+		parts[i] = w.translit
+	}
+	return strings.Join(parts, " ")
 }
 
 // resolveCanonicalRef maps a word's own verse back to a canonical Ref.
@@ -428,12 +455,4 @@ func resolveCanonicalRef(db *sql.DB, w wordRow, corpus string) (retriever.Ref, r
 			"this word's containing %s verse was merged from %d canonical verses (T4b relation=%s) - the exact canonical verse for THIS WORD is undetermined without word-level alignment (T22, deferred); showing the first of %d: %s",
 			corpus, len(crefs), c.relation, len(crefs), ref.String()), nil
 	}
-}
-
-func sourceFile(db *sql.DB, code string) (string, error) {
-	var f string
-	if err := db.QueryRow(`SELECT source_file FROM sources WHERE code = ?`, code).Scan(&f); err != nil {
-		return "", fmt.Errorf("sourceFile %s: %w", code, err)
-	}
-	return f, nil
 }

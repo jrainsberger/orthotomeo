@@ -98,11 +98,38 @@ func firstToken(s string) string {
 	return fields[0]
 }
 
-// Lookup returns the lemma and gloss for a dstrong key.
-func Lookup(db *sql.DB, dstrong string) (lemma, gloss string, err error) {
-	err = db.QueryRow(`SELECT lemma, gloss FROM lexicon WHERE dstrong = ?`, dstrong).Scan(&lemma, &gloss)
+// Entry is one resolved dStrong -> lexicon row (T34). Definition is nil for
+// a Hebrew (TBESH, language="he") row: its raw definition column is
+// abridged BDB via Online Bible, flagged in sources.json as "permission
+// required before applying definitions" - that data stays loaded (T5) but
+// Lookup never surfaces it, not even accidentally, until that permission is
+// separately resolved (see docs/PLAN.md T34). Greek (TBESG) rows are clear
+// (Abbott-Smith 1922, Public Domain) and always get a non-nil Definition.
+type Entry struct {
+	DStrong    string  `json:"dstrong"`
+	Language   string  `json:"language"`
+	Lemma      string  `json:"lemma"`
+	Translit   string  `json:"translit"`
+	Gloss      string  `json:"gloss"`
+	Definition *string `json:"definition,omitempty"`
+}
+
+// Lookup resolves dstrong to its lexicon Entry. Definition is populated only
+// for a Greek row - a Hebrew row always returns Definition == nil, gloss
+// only, regardless of whether its definition column happens to be
+// non-empty in the source file (the gate is the license, not the data).
+func Lookup(db *sql.DB, dstrong string) (Entry, error) {
+	var e Entry
+	var definition string
+	err := db.QueryRow(`
+		SELECT dstrong, language, lemma, translit, gloss, definition
+		FROM lexicon WHERE dstrong = ?`, dstrong).
+		Scan(&e.DStrong, &e.Language, &e.Lemma, &e.Translit, &e.Gloss, &definition)
 	if err != nil {
-		return "", "", fmt.Errorf("lookup %s: %w", dstrong, err)
+		return Entry{}, fmt.Errorf("lookup %s: %w", dstrong, err)
 	}
-	return lemma, gloss, nil
+	if e.Language != "he" {
+		e.Definition = &definition
+	}
+	return e, nil
 }

@@ -1231,7 +1231,7 @@ shape mattered. Purely additive; no existing Go code depended on the previous
    error (`IsError:true`) rather than silently matching nothing.
 
 Standing discipline carried forward from T25: future transports (T26 CLI, T27
-HTTP+web, T28 Fyne) must self-verify the same `engine`-only import constraint as
+HTTP+web, T28 desktop) must self-verify the same `engine`-only import constraint as
 they're written.
 
 **T20 UPDATE (2026-07-01, found via real-world use through Claude Desktop):**
@@ -1315,7 +1315,7 @@ own worked example. `cmd/orthotomeo/orthotomeo_test.go` covers all four subcomma
 open failure, using a real built fixture DB (no mocks) per the project's own
 testing convention.
 
-### T27 - HTTP + local web UI  `BLOCKED` on T25
+### T27 - HTTP + local web UI  `DONE`
 **Goal:** the browser-facing seam. The browser renders polytonic Greek and RTL Hebrew
 correctly for free - the reason a web UI beats a native-toolkit renderer here.
 **Scope:**
@@ -1331,16 +1331,406 @@ correctly for free - the reason a web UI beats a native-toolkit renderer here.
   non-shippable editions like a fetched Rahlfs LXX out of the served set); no secrets,
   no auth needed for a loopback read-only server, but document the loopback assumption
   so nobody re-binds it to a LAN.
+- **Print support (2026-07-01 decision):** `@media print` stylesheet only, no new
+  route/endpoint - a study reference list is exactly the kind of output someone prints
+  or exports to PDF via the browser's own print dialog. Hides the search bar and any
+  interactive chrome (buttons, selects), forces plain black-on-white (confidence
+  badges must not rely on color alone - add a border/outline so they survive
+  grayscale printing), and keeps table rows from splitting across a page break
+  (`tr { page-break-inside: avoid; }`) while still allowing the table itself to
+  paginate. The T31 sources/attribution footer must always print - it's the
+  license/attribution surfacing that CC BY sources require to be visible "in the
+  work as served," and a printed page is part of that surface.
 **Acceptance:** `GET /concord?dstrong=G0859` returns the full set as JSON;
 `Count == len(Concord)` across the HTTP boundary; the web UI renders one Greek and one
 Hebrew result legibly; the listener is loopback-only (assert the bind address);
-a non-shippable edition is absent from a shippable-mode response.
+a non-shippable edition is absent from a shippable-mode response; printing the page
+(browser print preview) hides the search chrome, keeps the results table and the
+sources/attribution footer, and shows no color-only confidence indicators.
 
-### T28 - Fyne desktop launcher  `BLOCKED` on T27
+### T27 AS-BUILT (2026-07-03)
+
+Built as scoped, plus two endpoints the original scope predates: **`/interlinear`**
+(T35) and **`/define`** (T34), since both landed earlier this session and the
+ticket's own "recommended next executable order" note said T27 should draw on them
+rather than retrofit later. Final endpoint set: `/verse`, `/passage`, `/concord`
+(routes to `ConcordLemma` or `ConcordPhrase` depending on whether a `phrase` param is
+present, mirroring T26 CLI's own `--phrase` branch), `/parse`, `/attest`,
+`/interlinear`, `/define` - 7 GET routes, `net/http`'s Go 1.22+ method-prefixed
+`ServeMux` patterns (`"GET /verse"`), stdlib only, no framework.
+
+**Response shape parity, not a new shape:** every Citation-bearing endpoint returns
+the identical `{citations, sources}` envelope T26's CLI `--json` and T20's MCP tools
+already use; `/interlinear` mirrors it with `{words, sources}`; `/define` returns
+`lexicon.Entry` directly (no wrapper needed - `Definition` is already `omitempty`).
+A client that knows one transport's JSON shape knows all three.
+
+**Security, each part actually enforced, not just documented:**
+- **GET-only** is structural, not a middleware check - every route is registered as
+  `"GET /path"`; Go's own `ServeMux` returns 405 for any other method with zero
+  handler code involved (verified: `TestOnlyGETIsAllowed` POSTs to all 7 routes).
+- **Loopback-only** lives in `cmd/orthotomeo-web`, not `httpapi` itself -
+  deliberately **no `--host` flag exists at all**, only `--port`, so there is no
+  flag combination that could ever bind to `0.0.0.0` or a LAN interface. The bind
+  logic is factored into `listenLoopback(port)` specifically so a test could assert
+  the real `net.Listener`'s address, not just read the source
+  (`TestListenLoopbackBindsOnlyToLoopback`, `cmd/orthotomeo-web/main_test.go`).
+- **Shippable-only content:** `httpapi/security.go`'s `shippableEditions`/
+  `requireShippable` take the registry as a parameter specifically so a test could
+  fabricate a non-shippable source and prove the gate actually drops/rejects it -
+  today's real `sources.json` has zero non-shippable rows (there's nothing
+  non-shippable until T23's Rahlfs LXX exists), so this couldn't otherwise be tested
+  against real data at all. `shippableEditions` silently drops a non-shippable
+  edition from a multi-edition list (`/verse`, `/passage`); `requireShippable`
+  errors on a *known* non-shippable single corpus (`/concord`, `/parse`, `/attest`,
+  `/interlinear`) but deliberately passes an *unknown* code through unjudged - that
+  validation belongs to `engine`, not a duplicated worse-message copy of it here.
+- **No raw SQL, ever:** confirmed by construction - `httpapi` imports only `engine`,
+  `interlinear`, `lexicon`, `retriever`, `sources` (registry only, not DB), never
+  `database/sql` or `orthotomeo/store`, same discipline `orthotomeo-mcp` already
+  follows.
+
+**Static UI** (`httpapi/static/`, `embed.FS`): a single-page vanilla-JS app
+(`index.html` + `app.js` + `style.css`, no framework) with a mode selector (verse /
+passage / concord / parse / attest / interlinear / define) that shows only the
+relevant input fields per mode, fetches the matching endpoint, and renders a results
+table plus a sources/attribution footer (T31 file/license/attribution, T36
+`homepage_url` as a clickable link when present). Original-language table cells use
+`dir="auto"` so the browser's own bidi algorithm handles RTL Hebrew correctly without
+hardcoding direction - this is the entire reason a web UI beats a native-toolkit
+renderer here, and it required zero special-case code, exactly as the ticket's Goal
+predicted.
+
+**Print stylesheet:** `@media print` block in `style.css` per the decided scope -
+hides the search form and print button, forces black-on-white, gives `.badge`
+elements a real border so a confidence badge survives grayscale printing (never
+color-only), keeps `tr { page-break-inside: avoid; }`, and gives the sources footer
+its own `page-break-inside: avoid` with a heavier border so it reads as a distinct,
+intact block on a printed page - it's the CC BY attribution surface, so it must not
+get silently orphaned mid-page-break.
+
+**Validated against the real corpus, not just fixtures:** rebuilt a scratch DB from
+the actual `bible-text`/`STEPBible-Data` roots (full `--verify` passed), started the
+real `orthotomeo-web` binary, and hit it with real HTTP requests: `GET /interlinear`
+for Lev.17.11 (TAHOT) returned real Hebrew text/translit/gloss; `GET /concord` with
+`phrase=εἰς,ἄφεσις&corpus=TAGNT` returned both real NT occurrences with `translit:
+"eis aphesin"`; `GET /` served the HTML shell (200, `text/html`); `GET
+/static/app.js` served (200); a `POST` to every route returned 405; the `sources`
+map on a live response carried `homepage_url`. (One process-management note, not a
+code issue: the smoke-test server was started detached from this session's shell,
+so it couldn't be torn down automatically afterward - `taskkill` is blocked by a
+standing user deny-rule - left running on loopback for Justin to close manually;
+harmless, read-only, not a security concern, just noted so a stray listener on
+127.0.0.1:8421 doesn't look mysterious later.)
+
+New test files: `httpapi/httpapi_test.go` (20 tests: one per endpoint against a real
+DB fixture, GET-only enforcement, static asset serving, index page), `httpapi/
+security_test.go` (the shippable-gate tests described above), `cmd/orthotomeo-web/
+main_test.go` (the loopback-bind test). Full suite green across every package.
+
+**E2E addendum (2026-07-04): `httpapi/e2e_test.go`, chromedp not Playwright.**
+`httpapi_test.go`'s handler-level tests can't prove the actual served page works -
+they never load `index.html` in a real browser or run `app.js`'s mode-switching/
+fetch/render logic. Considered Playwright (Node-based `@playwright/test` and the
+community `playwright-go` binding) vs `chromedp` (`github.com/chromedp/chromedp`);
+chose chromedp - it's genuinely pure-Go (talks the Chrome DevTools Protocol
+directly, no Node process anywhere, unlike `playwright-go` which still shells out
+to Playwright's own Node driver under the hood) and runs inside plain `go test`,
+keeping this repo on one toolchain - the same reasoning that already picked Gio
+over Fyne for T28. Real tradeoff, accepted deliberately: Chrome/Chromium only, no
+cross-browser coverage - acceptable for a local, single-user, read-only tool.
+Bumped `go.mod`'s `go` directive 1.25.0 -> 1.26 (chromedp's latest requires it;
+matches the toolchain already installed, not a forced download).
+
+**A real chromedp lifecycle quirk found and fixed, not worked around:** an initial
+design ran a short "probe" `chromedp.Run` first (navigate to `about:blank`, confirm
+a browser actually launched) so a missing-Chrome machine would skip cleanly, then
+ran the real test actions in a second `chromedp.Run` call on a fresh child context.
+Every real action then failed with `context canceled` - reproduced in isolation
+(a 6-line repro outside the test suite) and confirmed: chromedp ties a browser
+tab's lifetime to whichever context first navigated it, so cancelling even a
+short-lived **child** `context.WithTimeout` used only for the probe tears down the
+whole tab, breaking later calls on the same base context. Fixed by dropping the
+separate probe entirely - one context, one `chromedp.Run` call per test - and
+classifying the action-chain's own error instead (`skipIfNoBrowser`: a
+browser-launch failure like "executable file not found" skips, any other error
+still fails the test for real).
+
+Two tests: `TestE2EIndexPageLoadsSearchForm` (baseline - the embedded `index.html`
+actually renders a working form, checked via page `<title>`) and
+`TestE2EParseSearchRendersResultsTable` (drives the real UI: dispatches a real
+`change` event on the mode `<select>` so `app.js`'s own listener reveals the
+corpus/word fields - not simulated by directly toggling CSS classes - fills the
+ref/corpus inputs, clicks submit, waits for `#results table`, and confirms the
+real fetched-and-rendered text contains `G0859`/`MAT.26.28`). Both pass against
+the actual Chrome install on this machine. Full suite still green (`cmd/
+orthotomeo-desktop`'s tests included - unaffected).
+
+**UI-design port addendum (2026-07-04): lightwater theme + real dropdowns.**
+Ported the 7 chat-reviewed mockups (verse/passage/concord/parse/attest/
+interlinear/define, one per `httpapi` endpoint) into the actual shipped
+`httpapi/static/` - not just a visual reskin: `editions` (verse/passage) became a
+real `<select multiple>` and `corpus`/`by` (concord/parse/attest/interlinear)
+became real `<select>` dropdowns, replacing free-text inputs. `app.js`'s submit
+handler gained explicit multi-select handling (`input.multiple` ->
+`selectedOptions`, not `.value`, which only ever returns the first selected
+option) - proven by a new E2E test, not just code review:
+`TestE2EVerseSearchReadsMultiSelectEditions` selects a second edition (ASV,
+alongside KJV's default) via a real DOM interaction and confirms **both** come
+back in the fetched results, not just the first.
+
+`style.css` rebuilt on the same `t-lightwater` palette as `Baptism/design/
+prototype-full.html` (Spectral serif for original-language text, the gold accent,
+blue-gray ink/rule tones) rather than the earlier CDS-neutral placeholder theme.
+
+**Two real bugs found only by actually screenshotting the live page** (chromedp's
+`FullScreenshot`, not just re-reading the CSS) **against the real corpus**, not
+caught by any of the passing unit/E2E tests, since none of them assert on layout
+or rendered HTML structure:
+1. The `book`/`chapter`/`verse`/`word` input boxes rendered ~3x their intended
+   height. Cause: a blanket `.field.active { flex-direction: column }` rule meant
+   only for the labeled `editions` field was applying to every field. Fixed by
+   scoping the stacked layout to `.field.active:has(.field-label)` instead of
+   every active field.
+2. The Abbott-Smith lexicon definition (`define` mode) rendered its own embedded
+   markup (`<b>`, `<BR/>`, custom `<ref>` tags - present in the STEPBible TBESG
+   source file itself, meant to render) as literal visible angle-bracket text,
+   since `app.js` set it via `textContent`. **Explicitly decided, not assumed:**
+   asked whether to render as HTML - confirmed safe specifically because this
+   string only ever originates from bundled, static corpus data (never a request
+   parameter or any other caller-controllable input), so there's no injection
+   surface `innerHTML` would open here that `textContent` was actually guarding
+   against. Switched `entry-definition` to `innerHTML`, documented inline in
+   `app.js` why this specific case is safe (a blanket "always use innerHTML"
+   habit elsewhere would NOT be safe - this is a narrow, justified exception).
+
+Both fixes verified visually via real chromedp screenshots against a freshly
+rebuilt DB from the actual corpus (Lev.17.11 TAHOT interlinear view, Jhn.1.1
+KJV+ASV multi-select verse lookup, G0859 Abbott-Smith definition card) before and
+after each fix - not just re-run tests, actually looked at the rendered pixels.
+Full suite green throughout.
+
+**Second addendum (2026-07-04): saved mockups as files + a real editions bug found
+by direct comparison, not a stale build.** All 7 mockups saved as standalone files
+(`design/t27-{verse,passage,concord,parse,attest,interlinear,define}.html`), same
+convention as the earlier two `t27-web-ui-lightwater*.html` files. Justin reported
+the live app didn't match the design (screenshot showed WEB alone highlighted in
+the editions list, and wider-than-expected `book`/`chapter`/`verse` boxes) after
+rebuilding `orthotomeo-desktop.exe` fresh - ruling out the "stale embedded assets"
+explanation from T28's earlier note. Investigated by chromedp-screenshotting the
+real app's untouched default state (via `httptest`, straight from source, no
+compiled binary involved) side by side with the saved `design/t27-verse.html` file
+(`file://` navigation, same chromedp tooling) - direct comparison, not
+re-reading the CSS and guessing.
+
+**Finding: the default state was already correct** (KJV pre-checked, consistent
+box widths) - the reported mismatch traced to a real, separate problem: `editions`
+was a native `<select multiple>`, and **a plain click on one option silently
+deselects every other selected option** (standard HTML behavior - only a
+Ctrl/Cmd+click adds to a selection instead of replacing it). Clicking "WEB" to try
+the field out would deselect KJV and leave only WEB checked, exactly matching the
+screenshot - not a stale build, not a rendering bug, a real interaction trap with
+no affordance telling the user a modifier key was needed. Confirmed the diagnosis
+with Justin before fixing rather than assuming it.
+
+**Fixed by replacing the `<select multiple>` with 4 independent checkboxes**
+(`index.html`, new `.checkbox-group` styling in `style.css`), each toggling on its
+own click with no modifier-key requirement - closer to what "pick several" actually
+means to a user. `app.js`'s submit handler updated to gather every *checked* box
+sharing `name="editions"` (`querySelectorAll` + `.checked` filter) instead of
+reading `selectedOptions` off a single multi-select element.
+`TestE2EVerseSearchReadsMultiSelectEditions` updated to click the real ASV
+checkbox (a real user interaction, not a JS property set) and still confirms both
+KJV and ASV round-trip through a live fetch. Both affected `design/*.html` mockups
+(`t27-verse.html`, `t27-passage.html` - `editions` is one shared field config
+across both modes) updated to match. Re-screenshotted the real app post-fix to
+confirm the checkboxes render and toggle independently. Full suite green.
+
+**Third addendum (2026-07-04): a real re-theme, via `/frontend-design`.** The
+"lightwater" palette was borrowed wholesale from an unrelated project (Baptism, a
+devotional thesis book) - a real, non-generic aesthetic, but not one derived from
+orthotomeo's own subject matter. Re-derived the visual identity from what
+orthotomeo actually is: a critical-apparatus / interlinear-lexicon tool (manuscript
+sigla, Strong's numbering, morphological parse codes, Ketiv/Qere), not a devotional
+reading surface. Ran the design through a brainstorm/plan/critique pass before
+touching code (per the `/frontend-design` skill's own process) and checked the
+result against the three current AI-design clichés (warm-cream+terracotta,
+near-black+acid, broadsheet-hairlines) before building, to confirm it wasn't
+defaulting into one of them.
+
+**New tokens:** paper `#F5F2EA` / ink `#1C1B18` / rule `#D6D0C0` / rubric (Greek/NT
+accent, critical-edition red) `#8A2E1C` / indigo (Hebrew/OT accent) `#26314C` /
+gilt (confidence badges only) `#9C7A2E` - the Greek/Hebrew color split isn't
+decorative, it does real work disambiguating LTR vs RTL content at a glance.
+Type: **STIX Two Text** (display+body - built for scholarly typesetting, real
+academic pedigree, distinct from Spectral/Playfair/Fraunces defaults), **Noto
+Serif** / **Noto Serif Hebrew** (original-language text, robust polytonic/niqqud
+coverage), **Fragment Mono** (apparatus codes - dStrong, morph codes, refs).
+
+**Signature: the apparatus row + the colophon.** Every result row's citation
+number is styled as a footnote mark (superscript ¹²³via a `SUPERSCRIPT_DIGITS`
+map in `app.js`, not a plain digit column) against a rubric-red left rule
+(`td.ordinal` in `style.css`) - "structure is information": the number IS a
+footnote reference in a critical edition, so it's spelled that way. The `#sources`
+block (unchanged element ID, so nothing downstream broke) is reframed as a
+**colophon** - the scribal note naming a manuscript's origin at its close, the
+same provenance information a generic "sources" list carries, in the vocabulary
+of the subject matter itself (an asterism `⁂` mark prefixes the heading via
+CSS `::before`).
+
+**Attribution, explicitly placed per Justin's answer, not assumed:** asked
+whether the credit line should live in the per-result colophon (only visible
+after a search) or persist regardless of search state - persistent won. Added
+`<footer class="credit">orthotomeo, an engine by Justin Rainsberger</footer>` in
+`index.html`, always rendered, independent of `#results`/`#sources` state.
+
+**Validated against the real corpus**, not just the color-swatch specimen shown
+for approval first: rebuilt a fresh DB, screenshotted `interlinear` (Lev.17.11,
+TAHOT - real Hebrew renders correctly in Noto Serif Hebrew, apparatus rows and
+colophon both correct) and `define` (G0859 - Greek headword in indigo, gloss in
+rubric, Abbott-Smith definition in STIX Two Text) via chromedp against the actual
+running server. `orthotomeo-desktop.exe` rebuilt with the new theme baked in.
+Existing E2E tests (`httpapi/e2e_test.go`) needed no changes - they assert on
+text content and element structure (`#results table`, checkbox values), not the
+specific CSS/type tokens that changed. Full suite green.
+
+**Not yet done, flagged not silently skipped:** the 9 saved `design/*.html`
+mockup files (the 7 per-tool-type ones plus the 2 earlier lightwater ones) still
+reflect the old palette/type and haven't been refreshed to the apparatus theme -
+a real follow-up if they're going to keep being used for comparison-driven
+debugging the way they were earlier this session.
+
+**Fourth addendum (2026-07-04): navigation/cross-linking UX pass.** Justin asked
+for a review of navigation/input/display for ease of use, flagging a concrete
+example: a Strong's number (`dstrong`) rendered as plain text in a results table
+is useless on its own without a path to what it actually means. Reviewed the
+whole surface, not just that cell, and found three real gaps:
+1. `dstrong`, `lemma`, and `ref` were all dead text across every results table -
+   no way to go from "I see G0859" to its gloss, from "I see this lemma" to its
+   other occurrences, or from "I see this ref" to its full interlinear reading,
+   without manually retyping into a different mode.
+2. Cross-linking creates its own problem: no browser-history integration (this
+   is a client-side-fetch single-page app, the URL bar never changes), so
+   without a fix, clicking into a definition from a result row would strand the
+   reader with no way back except re-running the original search.
+3. **A separate, real display bug found in passing**: `renderCitations` never
+   rendered `Attestation`/`Manuscripts` at all, and `renderWords` never rendered
+   `Lemma`/`DStrong` - both fields the backend already sends (`omitempty` JSON,
+   present whenever populated). `attest` mode's entire purpose is showing
+   Type/Manuscripts data, and it was silently invisible. Fixed alongside the
+   cross-linking work since it's the same "display what the API already sends"
+   concern, not scope creep - flagged explicitly rather than silently bundled in.
+
+**Decisions, asked not assumed:** confirmed whether dStrong linking should be
+click-through-only or also invest in a hover preview (chose to build both -
+click-through to full `/define` view, plus a debounced, cached hover tooltip
+showing just the gloss without leaving the results); confirmed which other
+cross-links to build (`lemma` -> `concord`, `ref` -> `interlinear`, both scoped
+to word-tagged results only, not verse/passage's plain-text editions where
+there's no corpus to jump to); confirmed the back-link and title-tooltip
+additions rather than assuming scope.
+
+**Implementation:** `app.js` refactored around shared `gatherParams`/
+`applyParams`/`setFieldValue` helpers (previously inlined in the submit
+handler) so cross-link navigation and "back" restoration use the exact same
+code path a normal search does, not a parallel one. `historyStack` is pushed
+only on a cross-link jump (not every search) - "restores the prior mode,
+fields, and results" scoped to undoing a jump, not a full search log. The
+hover preview (`scheduleGlossPreview`/`fetchGlossPreview`) debounces 250ms and
+caches by dStrong (`definitionCache`) so a fast pass over several cells never
+fires more than one fetch per distinct dStrong. Cross-links are real `<a>`
+elements (`xlink()` helper), not divs with an onclick - keyboard tab order and
+Enter-to-activate work without extra code, and a `:focus-visible` outline was
+added both generically (`:root`) and specifically for `.xlink`, since keyboard
+navigation into a results table is exactly the case this skill's "quality
+floor" (visible keyboard focus) calls out. `attestationTitle()` gives the
+Type-code badge a native tooltip explaining N/K/O in plain language; confidence
+badges got a `title` too (a caveat's own text when Flagged, a generic
+explanation when High).
+
+**Validated for real, not just via the new E2E tests:** rebuilt the DB from the
+actual corpus and screenshotted a concord search for G0859 (17 real NT
+occurrences, full 10-column table, hover tooltip correctly showing "forgiveness
+(aphesis)" under the dStrong link), a click-through-then-back round trip
+(define view showing the `‹ back` link, confirmed it returns to the original
+concord results), and `attest` on the real Mark 16:9-20 longer-ending case
+(Type=KO now visible across all 15 words, previously invisible entirely).
+`orthotomeo-desktop.exe` rebuilt with the pass baked in.
+
+**New tests** (`httpapi/e2e_test.go`): `TestE2EDStrongLinkNavigatesToDefine`,
+`TestE2ELemmaLinkNavigatesToConcord`, `TestE2EBackLinkRestoresPriorResults`,
+`TestE2EDStrongHoverShowsGlossTooltip` - each drives the real DOM (a real click,
+a real dispatched `mouseenter`, not a direct function call), against the same
+`buildFixture` other httpapi tests already share. One real test-selector bug
+caught and fixed before these tests passed: `a.xlink:nth-of-type(2)` does not
+mean "the second cross-link in the row" - `nth-of-type` counts siblings under
+the same parent, and each `xlink` is the sole child of its own `<td>`, so it's
+always `nth-of-type(1)` relative to its own parent. Fixed by targeting column
+position (`td:nth-child(N) a.xlink`) instead, and by scoping each test's parse
+request to a single word (`?word=2`) so the target row is unambiguous rather
+than relying on selector ordering across multiple rows. Full suite green.
+
+**Fifth addendum (2026-07-04): book-field autocomplete.** Justin asked what I
+thought of making `book` a dropdown. Recommended a `<datalist>`-backed
+autocomplete instead of a `<select>`: this is a single fluent user's own tool,
+and he already types book codes from memory - a full dropdown would slow down
+the common case to fix a rare one (a forgotten/mistyped code), where a
+datalist gets typo-catching and discoverability without giving up free typing.
+Traded off explicitly: unlike a `<select>`, a `<datalist>` doesn't strictly
+enforce a valid choice.
+
+**Data source, not hand-typed:** rather than writing 66 `<option>` elements
+into `index.html` (a second, hand-maintained copy of the canonical book list
+that could silently drift from the real one - exactly what this project's own
+"single source of truth" discipline exists to prevent), added `GET /books`
+(`httpapi/handlers.go`) serving `books.Registry()` directly - the same
+embedded, checked-in `books.json` every loader already treats as ground truth
+(T2), zero DB access, zero new data. `app.js` fetches it once on page load and
+populates `<datalist id="books">`; a failed fetch just leaves the field as a
+plain text input (autocomplete is additive, never load-bearing).
+
+**Validated for real:** confirmed against the real corpus via chromedp - 66
+options, in canonical order, `GEN`/`Genesis` first. New tests: `TestBooksEndpoint`
+(the endpoint itself, 66 books, Genesis first), `TestOnlyGETIsAllowed` extended
+to cover `/books`, `TestE2EBookDatalistPopulatesFromRealRegistry` (confirms the
+real page-load fetch actually populates the DOM, not just that the endpoint
+works in isolation). `orthotomeo-desktop.exe` rebuilt. Full suite green.
+
+**Sixth addendum (2026-07-04): book-name resolution bug.** Justin reported
+"LUK" worked but "LUKE"/"Luke"/"luke" didn't. Root cause: `retriever.Ref.Book`
+is documented as requiring the canonical USFM code, and every transport
+resolved it via `verses.NewResolver(db, "usfm", ...)`, an exact, case-sensitive
+match against the `usfm` scheme only - `book_names` already has a `name-en`
+alias per book (Justin's own `books.Seed`, T2), but nothing outside the loader
+path ever queried it, and no path folded case at all. The HTTP handlers
+(`queryRef`/`handlePassage`) passed the raw query param straight through with
+zero normalization; the CLI's `parseRef` upper-cased but never tried the
+`name-en` scheme.
+
+**Fix, at the one seam, not per-transport:** added `books.ResolveCode(q, raw)`
+- tries `usfm` uppercased first, falls back to `name-en` case-insensitively
+(`COLLATE NOCASE`) - and exposed it as `Engine.ResolveBookCode`, so the
+normalization logic exists exactly once regardless of which transport calls
+it (`engine.go`'s own stated invariant: "no transport ever sees `*sql.DB`...
+a transport that needs SQL is a design failure"). Wired into both HTTP
+(`queryRef`, `handlePassage`) and the CLI (`parseRef`, which now takes
+`*engine.Engine` and resolves the book token before the dot-split parse still
+handles chapter/verse). Left the MCP tools' `ref()` helper alone - its schema
+already documents "canonical USFM book code" as the contract for an LLM
+client, a different situation from a human free-typing into a text field.
+
+**Validated:** new `books.TestResolveCode`/`TestResolveCodeUnknown` (usfm/
+name-en, every case, multi-word names, unknown-book still errors),
+`httpapi.TestVerseEndpointBookNameVariants`/`TestVerseEndpointUnknownBook`,
+CLI `TestLookupAcceptsBookNameVariants`. Also re-verified against the real
+corpus DB (not just the fixture) via a scratch script hitting `/verse` for
+LUK/luk/Luke/LUKE/luke (all 200) and a nonsense book (400). Full suite green;
+`orthotomeo-desktop.exe` rebuilt.
+
 **Goal:** an offline, no-browser-juggling native launcher, matching the Footsteps
 desktop pattern (desktop app starts the web server, opens the browser, and stops the
 server on close).
-**Scope:** `cmd/orthotomeo-desktop`, a Fyne app that:
+**Scope:** `cmd/orthotomeo-desktop`, a native GUI app that:
 1. starts the T27 HTTP server on an ephemeral **loopback** port;
 2. opens the default browser to `http://orthotomeo.localhost:<port>/` (the
    `*.localhost` host resolves to 127.0.0.1 per RFC 6761; matches the house
@@ -1348,16 +1738,605 @@ server on close).
 3. shows a minimal status window / tray (running, port, quit);
 4. on window close / quit, cancels the server context, waits for a clean shutdown
    (port released, no orphan process), and exits.
-- **Fyne renders NO scripture** - it is a lifecycle shell only; the browser owns all
-  Greek/Hebrew rendering. This is what keeps the "thin wrapper" actually thin and
-  sidesteps Fyne's complex-script/RTL weaknesses.
-**Dependency:** `fyne.io/fyne/v2` - the only new dep T28 adds; **approved**
-(2026-06-30), precedent from Footsteps and other apps. `modernc.org/sqlite` (also
-approved) is already the engine's driver (`store/store.go`, pure-Go, no cgo), so the
-whole build - engine, HTTP, and desktop - stays C-toolchain-free with no migration.
+- **The GUI toolkit renders NO scripture** - it is a lifecycle shell only; the
+  browser owns all Greek/Hebrew rendering. This is what keeps the "thin wrapper"
+  actually thin and sidesteps any GUI toolkit's complex-script/RTL weaknesses.
+**Dependency:** originally `fyne.io/fyne/v2`, approved 2026-06-30 on the assumption
+(unverified at the time) that it would keep the whole build - engine, HTTP, and
+desktop - C-toolchain-free like `modernc.org/sqlite` already does. **Corrected
+2026-07-03 (see AS-BUILT): that assumption was wrong** - Fyne's default desktop
+driver requires cgo. Built on `gioui.org` instead, which actually delivers the
+cgo-free property this ticket wanted.
 **Acceptance:** launching the binary opens the working search UI in the browser;
-quitting stops the server (port freed, process exits, verified no orphan); Fyne itself
-draws no verse text; run on Windows (primary) at minimum.
+quitting stops the server (port freed, process exits, verified no orphan); the GUI
+toolkit itself draws no verse text; run on Windows (primary) at minimum.
+
+### T28 AS-BUILT (2026-07-03)
+
+**The dependency changed mid-ticket, for a real, verified reason - not a preference
+swap.** Built with Fyne first (as originally approved), then discovered its default
+desktop driver pulls in `go-gl/glfw`, which is cgo-based: `CGO_ENABLED=0 go build
+./cmd/orthotomeo-desktop` failed outright (`build constraints exclude all Go files`
+on `github.com/go-gl/gl`). This directly contradicted PLAN.md's own recorded
+assumption that the whole build would stay C-toolchain-free - that assumption was
+simply inaccurate when written, not a newly-introduced regression (Footsteps, the
+cited precedent, already ships Fyne+cgo successfully, so cgo itself isn't new risk -
+but it wasn't the *documented* design either). Surfaced this to Justin directly with
+the actual landscape of alternatives (Gio: true pure-Go via OS syscalls, less mature,
+more manual API; `lxn/walk`: pure-Go but Windows-only; nothing else avoids cgo the
+way `modernc.org/sqlite` does) rather than quietly picking one. **Decision: switch to
+Gio** - confirmed by rebuilding with `fyne.io/fyne/v2` fully removed
+(`go mod tidy`) and `gioui.org` added instead; `CGO_ENABLED=0 go build
+./cmd/orthotomeo-desktop` now succeeds, the property originally wanted.
+
+**Scope split across two files**, deliberately: `server.go` is the non-GUI lifecycle
+logic (`startServer`/`shutdown`/`port`/`url`/`openBrowser`) - fully unit-testable
+without a display, which `go test` in CI doesn't have. `main.go` is purely the Gio
+window (status label, "Open in browser" button, "Quit" button) using Gio's own
+idiomatic `for { switch w.Event().(type) { ... } }` loop, not a callback API -
+confirmed via `go doc` against the actually-installed `gioui.org v0.10.1` rather than
+assumed from general Gio familiarity, since Gio's window/event API has changed
+shape across versions.
+
+Matches T27's own "no --host flag" discipline: `startServer` hardcodes
+`127.0.0.1` with an ephemeral port (`:0`) - there is no parameter anywhere in this
+binary that could bind beyond loopback. `url()` builds the `http://
+orthotomeo.localhost:<port>/` address per the ticket's own RFC 6761 reasoning
+(matches Footsteps' `footsteps.localhost` precedent) rather than a bare IP.
+
+**Validated:** `TestStartServerBindsLoopbackAndServes` (a real HTTP GET through the
+started server, not just "a listener opened"), `TestPortMatchesListener`,
+`TestShutdownReleasesThePort` (two independent checks: the shut-down server refuses
+new connections, AND the OS eventually allows rebinding the identical port - the
+second check uses a short bounded retry, not a single immediate attempt, after a
+real flake surfaced: Windows can hold a just-closed TCP port in TIME_WAIT briefly
+even after a clean `Shutdown`, so an instant re-listen attempt failed transiently on
+a genuinely-working shutdown path - fixed the test's timing assumption, not the
+shutdown code, which was already correct), `TestStartServerFailsOnMissingDB`.
+**Not independently visually verified** (window actually renders, browser actually
+opens) - a prior smoke-test process from this session was left running because
+`taskkill` is blocked by a standing deny-rule, so a second GUI-launching smoke test
+was skipped to avoid leaving another orphaned window; the underlying HTTP/lifecycle
+logic every button/action calls is fully tested, and every Gio API call was checked
+against the real installed package via `go doc` rather than guessed, but the actual
+window paint/click path itself wasn't clicked through by a human or a screenshot
+this session. Worth a manual run before considering this fully proven, not just
+tested.
+
+### T30 - Public remote MCP deployment (Streamable HTTP + GCP)  `NEXT` (design decided 2026-07-01)
+**Goal:** make the MCP server reachable by anyone as a claude.ai custom connector, at
+zero/near-zero cost, without requiring any login on either side.
+**Decisions made (2026-07-01 session):**
+- **Transport:** stdio (current, local-only) does not satisfy this - per the MCP spec,
+  a remote client can only reach a server over **Streamable HTTP** (single endpoint,
+  POST+GET, `Mcp-Session-Id` session header). This is a real new entry point, not a
+  config flag - `cmd/orthotomeo-mcp` needs a second command (or a `--transport` flag)
+  using the go-sdk's Streamable HTTP handler alongside the existing stdio one. Origin
+  header validation is a spec **MUST** for this transport (DNS-rebinding protection) -
+  implement it regardless of the auth decision below.
+- **Auth: none, by design decision, not by default.** The MCP spec itself makes
+  authorization OPTIONAL for HTTP transports - there is no protocol requirement forcing
+  OAuth. Given this server's data (public-domain/CC-licensed biblical text, read-only,
+  no user data, no writes), "no auth" is a defensible choice for the *access-control*
+  risk, unlike it would be for a write-capable or PII-bearing service. What auth would
+  have controlled (cost exposure to anonymous traffic) is instead controlled directly:
+- **Cost/abuse controls replace auth as the actual safety mechanism:**
+  - Cloud Run `--max-instances=1` (explicit user decision - never scale beyond one
+    instance, full stop, regardless of traffic).
+  - Rate limiting and request limits, enforced **in-app** (not just at the GCP/Cloud
+    Armor layer) - this is real code to write, not just a deploy flag.
+  - A GCP budget alert as a second, independent backstop.
+  - Origin validation (above) is a security control, not a cost control, but ships in
+    the same pass since it's a spec **MUST** either way.
+- **Packaging:** a **separate new executable** (not a mode flag on the existing
+  `cmd/orthotomeo-mcp` stdio binary used by Claude Desktop) - keeps the locally-run
+  stdio path and the publicly-exposed HTTP path as genuinely separate binaries with
+  separate blast radii, rolled into one Docker image for Cloud Run deployment. The
+  built DB is baked into the image at build time (`cmd/build` runs at image-build time,
+  not at container startup) - matches the existing "DB is a regenerable build artifact"
+  discipline, just relocated to the image build step.
+- **Monitoring:** usage monitoring is a stated requirement, not yet designed - Cloud
+  Run's built-in request logs are the starting point; whether anything more
+  purpose-built is needed is an open question, not decided.
+**Was blocked on T31 (attribution/license surfacing) - T31 is now `DONE`** (2026-07-01):
+served output now carries `sources.<edition>.license`/`.attribution` for every response,
+closing the compliance gap that existed before real (non-repo-reading) traffic. T30
+itself is unblocked; nothing in its own scope has been built yet.
+**Not yet decided:** exact rate/request-limit numbers; whether to also pursue listing
+in Anthropic's public connector directory (a separate, unresearched process - see
+chat) versus only publishing the URL for people to add as their own custom connector.
+
+### T31 - Citation attribution/license surfacing  `DONE`
+**Goal:** close a real CC BY 4.0 compliance gap found while scoping T30: served tool
+output currently carries no human-readable attribution or license text at all.
+**Finding (2026-07-01 session, verified against the code, not assumed):**
+- `retriever.Citation` (`retriever/retriever.go`) has `SourceFile` (a glob path, e.g.
+  `STEPBible-Data/Translators Amalgamated OT+NT/TAGNT*.txt`) and `SourceLocator`, but
+  **no `Attribution` or `License` field**. `sources.json` already records the correct
+  `license`/`attribution` string per source (the T1 sources registry) - it's just never
+  joined into what a caller of `concord_lemma`/`get_verse`/etc. actually receives.
+  CC BY 4.0 requires crediting the creator and linking the license **in the work as
+  served** - a value recorded in a repo file nobody using the live service reads does
+  not satisfy that. Fine as-is for a locally-run personal tool; a real gap once this is
+  a public service showing tool output to end users (T30).
+- Affects every CC BY 4.0 source: TAGNT, TAHOT, TBESG, TBESH (gloss only - see below),
+  TEGMC, TEHMC, OSS-LXX-lemma, OpenBible-xref. Public Domain sources (KJV, ASV, WEB,
+  Brenton, Swete) have no legal attribution requirement - crediting them is courtesy,
+  not compliance.
+- **TBESH carries a stricter sub-license, already correctly flagged in `sources.json`**:
+  `"CC BY 4.0 (definitions: abridged BDB via Online Bible - permission required before
+  applying definitions)"`. Verified directly against the code: the flagged
+  `lexicon.definition` column (the long BDB-derived Hebrew definitions, as opposed to
+  the short CC-BY `gloss`) is loaded by the T5 loader but **never read by any
+  query-serving path** - `grep`ed `parse`, `concord`, `attestation`, `retriever`,
+  `cite`, `engine`, `cmd/orthotomeo-mcp`, `cmd/orthotomeo`: zero hits on
+  `lexicon.definition`. So today this permission-gated content is inert from a serving
+  standpoint - not currently a violation, but two things to keep true going forward:
+  (a) never expose `lexicon.definition` through any future feature without actually
+  resolving the permission question, and (b) never make the raw `.db` file itself
+  downloadable (only query results) - a raw DB download would distribute the flagged
+  column even though no current tool response surfaces it.
+**Design revised (2026-07-01, before any code was written) - do not build the naive
+per-Citation-field version.** A live example surfaced the problem directly: a full-verse
+`parse`/`attestation` call over an 18-word verse (Lev.17.11, TAHOT) returns 18 Citations,
+and **`source_file` is the byte-identical string 18 times** in that one response - real,
+measured token waste, not a hypothetical. Adding `License`/`Attribution` as two more
+per-Citation fields would have made the exact same redundancy worse, not better, since
+`source_file`/`license`/`attribution` are never row-specific - they're **constants of the
+edition**, and every Citation in a single-corpus call (`concord_lemma`, `concord_phrase`,
+`parse`, `attestation`) shares one edition already.
+**Corrected shape:** move `SourceFile` (and the new `License`/`Attribution`) OUT of
+`Citation` entirely, into a small top-level map on the JSON envelope, keyed by the
+`edition` string already present on every Citation. **This is a net field removal, not a
+swap** - verified every Citation-construction site (`retriever.go`, `parse.go`,
+`attestation.go`, `concord.go`): `Edition` is unconditionally set to `info.sourceCode` /
+`corpus`, i.e. it is *already, always* the exact `sources.json` join key. No new per-row
+field (no numeric index, no separate `source` key) is added at all - `SourceFile` is
+simply dropped from each row, and `edition` (already present) does the pointing:
+```json
+{
+  "sources": {
+    "TAHOT": {"file": "STEPBible-Data/.../TAHOT*.txt", "license": "CC BY 4.0", "attribution": "STEPBible.org / Tyndale House Cambridge"}
+  },
+  "citations": [{"edition": "TAHOT", "ref": {...}, "source_locator": "Lev.17.11#01=L", ...}]
+}
+```
+`source_locator` (renamed `locator` - see below) stays inline on each Citation - unlike
+`source_file`, it's genuinely row-specific (e.g. `Lev.17.11#01=L` differs per word) and
+there's nothing to dedupe. `get_verse`/`get_passage` (which can span multiple editions in
+one call, e.g. KJV+ASV+WEB) get more benefit still: today they repeat each edition's
+`source_file` once per verse; with this shape each distinct edition appears exactly once
+in `sources` regardless of how many verses/editions are requested.
+
+**Two field renames decided in the same pass (2026-07-01), since both are naming
+problems the `source_file` fix exposed, not separate work:**
+- **`source_locator` -> `locator`.** Once `source_file` no longer sits on the row,
+  "source_locator" reads as if it still means "the source's locator" when "source" no
+  longer appears as a value at that level at all - `locator` alone is unambiguous next
+  to `edition`.
+- **`editions` -> `manuscripts`.** A real, pre-existing naming collision, independent of
+  the dedup work: `edition` (singular - the corpus/source name, e.g. `"TAHOT"`) and
+  `editions` (plural - the manuscript-attestation list, e.g.
+  `"NA28+NA27+Tyn+WH+Treg+TR+Byz"`) are two unrelated concepts differing only by an "s" -
+  easy to misread one for the other. Renamed to `manuscripts` (matches how the Concord
+  spec/WHNT itself talks about textual witnesses) to remove the ambiguity outright, not
+  just to save bytes.
+
+**Raised, not decided - a distinct, lower-confidence idea for later:** in an
+`attestation` call over a whole passage, `manuscripts` (nee `editions`) and
+`attestation` (the Type code) are *also* often identical across every word - verified
+directly against the real Mark 16:9-20 example, where all 9 words in the verse carry the
+exact same `manuscripts` string. This is a different kind of redundancy than
+`source_file` was: `edition -> source_file` is a *static* 1:1 mapping already recorded in
+`sources.json`, so reusing the already-present `edition` field as a pointer was free.
+`manuscripts`/`attestation` are genuine per-word *data* that only *usually* happens to
+repeat within a passage - deduping that properly needs an actual symbol table with
+indices (the exact complexity the `source_file` fix specifically avoided needing).
+Bigger design lift, less certain payoff - on record for a future pass, not scoped now.
+
+**Scope (not yet built):**
+1. Remove `Citation.SourceFile`; add the top-level `sources` map, populated from
+   `sources.json` at the one existing join point (`SourceFile` lookups already happen
+   in one place per the Rule-of-Three precedent - `retriever.ResolveEditionVerses`).
+2. Rename `Citation.SourceLocator` (JSON `source_locator`) -> `Locator` (JSON `locator`).
+3. Rename `Citation.Editions` (JSON `editions`) -> `Manuscripts` (JSON `manuscripts`).
+4. Every tool/CLI response wrapper (`citationsPayload` in both `cmd/orthotomeo-mcp` and
+   `cmd/orthotomeo`) gains the `sources` field alongside `citations`.
+5. **`cite.Cite`'s rendered Markdown is unaffected** - this dedup is a JSON-transport
+   optimization only. Markdown output is a flat string for human/LLM reading, not a
+   nested structure a client re-parses, so `Cite` still resolves edition to file
+   internally and inlines "(source: FILE LOCATOR)" per bullet exactly as it does today.
+6. Existing tests asserting exact Citation JSON shapes will need updating - expected,
+   not a regression signal.
+
+### T31 AS-BUILT (2026-07-01)
+
+Built exactly to the design above, no deviations. `retriever.Citation` lost `SourceFile`
+entirely; `SourceLocator`/`Editions` renamed to `Locator`/`Manuscripts`. New
+`retriever.SourceInfo` + `retriever.SourcesFor(citations) (map[string]SourceInfo, error)`
+- the one shared construction point, backed by `sources.Registry()` (the existing
+embedded-JSON decode, zero DB, zero I/O) - is the only place a `Citation.Edition` is
+joined against `sources.json`'s `license`/`attribution`/`source_file`. Every
+`sourceFile(db, ...)` DB lookup that existed **solely** to populate `Citation.SourceFile`
+was deleted outright (`concord.go`, `parse.go`, `attestation.go` each had one) - not just
+unused, genuinely removed, so ConcordLemma/ConcordPhrase/Parse/Attestation now make one
+fewer DB round trip per call than before. `retriever.go`'s own `sourceFile(db, code)`
+helper survives unchanged - `canonicalAddress`/`alignedAddresses` (which build
+`Address`, not `Citation`) still need it, and `Address.File` was never the redundant
+per-row repeat `Citation.SourceFile` was (one `Address` per edition already, never one
+per word).
+
+`cite.Cite` needed a real code change, not just "confirmed unaffected" as originally
+assumed: since `Citation` no longer carries a file, `Cite` now resolves it internally via
+`sources.Registry()` (its own edition->file map, computed once per `Cite` call) so the
+rendered Markdown bullet is byte-identical to before - confirmed directly against the
+real DB (`orthotomeo attest MRK.16.16 --word 4` still renders
+`(source: STEPBible-Data/.../TAGNT*.txt Mrk.16.16#04=KO)`).
+
+Both wrapper types (`citationsResult` in `cmd/orthotomeo-mcp`, `citationsPayload` in
+`cmd/orthotomeo`) gained the `sources` field; `cmd/orthotomeo-mcp` centralized the
+per-tool construction into one `toCitationsResult(cs, err)` helper (7 call sites, one
+shared point) rather than repeating `SourcesFor` at each.
+
+**Validated against the real DB, matching the exact motivating example:**
+`orthotomeo parse --corpus TAHOT LEV.17.11 --json` - the 18-word verse that started this
+ticket - now emits `source_file` **zero** times (down from 18) and exactly one
+`sources.TAHOT` entry with `file`/`license`/`attribution` populated from the real
+`sources.json` row. New direct tests for `SourcesFor` cover the dedup itself
+(many-Citations-one-edition -> one entry), multi-edition coverage, the empty-Edition
+skip, and the unknown-edition error - plus every existing test asserting the old
+`SourceFile`/`SourceLocator`/`Editions` shape was updated, not disabled. Full suite green.
+
+### T32 - per-word transliteration  `DONE`
+**Goal:** surface a pronunciation guide for the actual inflected word in a verse, not
+just its dictionary lemma - readers of Greek but not Hebrew (or vice versa, or neither)
+are a real, explicitly named audience (2026-07-01 session).
+**Context:** `lexicon.translit` (T5) already stores a transliteration, but only one per
+`dStrong` (the citation form) - CC BY 4.0, no permission caveat, already loaded for both
+Greek (TBESG) and Hebrew (TBESH). Separately, the source files TAGNT/TAHOT ingest from
+*do* carry a per-word transliteration column, but both ingesters (`tagnt/tagnt.go:117`,
+`tahot/tahot.go`) currently strip and discard it - it's parsed only to isolate the
+surface form, never stored.
+**Decision:** store the real per-occurrence transliteration, not the lemma-level one.
+A dictionary-form transliteration would silently paper over real inflection (Hebrew
+construct/pausal vowel changes, Greek case endings) - the exact "label without
+derivation" failure mode T24's output-footprint guard exists to catch, so it's worth
+avoiding at the source rather than filtering downstream.
+**Scope:**
+- Add a `translit TEXT` column to `words` (nullable - Swete/OSS rows have no
+  transliteration column in their source files and should store NULL, not a
+  lemma-level fallback that would misrepresent itself as per-word).
+- Stop discarding the transliteration field in `tagnt.go`/`tahot.go`; store it
+  alongside `surface`.
+- Add `Citation.Translit string \`json:"translit,omitempty"\`` (retriever.go); populate
+  at every construction site that already reads `w.surface`/`w.lemma` (same sites T31
+  touched: `retriever.go`, `concord.go`, `parse.go`, `attestation.go`).
+- `cite.Cite`: add transliteration to the bracketed metadata clause (order TBD when
+  built - likely right after the original-language `Text`).
+**Acceptance:** a TAGNT/TAHOT parse result carries a real, verse-specific
+transliteration per word; Swete/OSS rows carry none (NULL/omitted, not a
+misleading substitute); existing tests for the four touched packages updated, not
+disabled.
+
+### T32 AS-BUILT (2026-07-03)
+
+Built as scoped. `words.translit TEXT` (nullable) added to the schema. The two
+ingesters now capture it instead of discarding it:
+- **TAGNT** (`tagnt.go`): the Greek column is `"SURFACE (translit)"` in one field -
+  the old `surfaceWord` (which threw the parenthetical away) was replaced by
+  `surfaceAndTranslit` (a regex split, `^(.*) \(([^()]*)\)$`), returning both. Confirmed
+  transliteration survives even for a compound-tagged word (dstrong/lemma NULL, but
+  the whole span's transliteration is still real, storable data - "μήποτε (mēpote)"
+  stores `translit="mēpote"` despite having no single dStrong).
+- **TAHOT** (`tahot.go`): simpler - transliteration is already its own column
+  (`fields[2]`, confirmed against the real header: `Eng (Heb) Ref & Type / Hebrew /
+  Transliteration / Translation / dStrongs / ...`), just never read before. Now
+  inserted verbatim, including the literal `"[ ]"` placeholder the source itself uses
+  for an untagged Qere reading with no real transliteration - preserved as-is, not
+  filtered or reinterpreted (same "verbatim, not fabricated" discipline the rest of
+  this loader already follows for Ketiv/Qere markers).
+- Both loaders share a tiny `nullIfEmpty` helper (duplicated, not extracted to a
+  shared package - two three-line copies in independent loader packages isn't a
+  Rule-of-Three violation) so a blank transliteration becomes SQL NULL, not an
+  empty string standing in for "not applicable."
+
+`retriever.Citation` gained `Translit string \`json:"translit,omitempty"\``.
+Populated at the three real word-level construction sites - `concord.go`
+(`ConcordLemma` directly from `w.translit`; `ConcordPhrase` via a new
+`chainTranslit` helper), `parse.go`, `attestation.go`. **`retriever.go` itself
+needed no change beyond the struct field** - confirmed by inspection that
+`canonicalCitation`/`alignedCitations` (GetVerse/GetPassage) only ever query
+`verse_text` tables (KJV/ASV/WEB/Brenton), never `words`, so there is no
+per-word Citation built there to carry a transliteration in the first place.
+
+**`chainTranslit`'s all-or-nothing join** (not in the original scope bullets,
+decided while building): `ConcordPhrase` already joins each chain word's surface
+text into one `Text` string, so transliteration should join the same way - but
+only when *every* word in the chain actually has one. A partial join (real
+translit for word 1, blank for word 2) would misrepresent the phrase's
+pronunciation rather than honestly reporting "not available for this phrase,"
+so any missing word blanks the whole joined field.
+
+`cite.Cite`'s `metadata()` gained `Translit` as the **first** bracketed field -
+right after the quoted `Text`, before `DStrong`/`Lemma`/`Grammar` - since
+pronunciation is what a reader wants immediately alongside the text itself, ahead
+of the more technical dStrong/grammar data.
+
+**Validated against the real corpus**, not just the mini-fixtures: rebuilt the
+full DB from the actual `bible-text`/`STEPBible-Data` roots (`go run ./cmd/build
+... --verify` - full verify passed, all completeness checks green) and confirmed
+real transliteration renders for both languages - `orthotomeo parse --corpus
+TAGNT MAT.26.28` shows `[touto, ...]`, `[gar, ...]`, etc.; `orthotomeo parse
+--corpus TAHOT LEV.17.11` - the exact 18-word verse that motivated T31's
+citation-shape redesign - shows `[ki, H3588A, ...]`, `[Ne.fesh, H5315H, ...]`,
+etc., and the `--json` form carries `"translit": "ki"` in the expected position.
+New direct tests: `TestLoadExtractsTransliteration` +
+`TestLoadExtractsTransliterationForCompoundWord` (tagnt),
+`TestLoadStoresTransliterationColumnVerbatim` +
+`TestLoadPreservesPlaceholderTransliterationVerbatim` (tahot),
+`TestConcordLemmaPopulatesTranslit` +
+`TestConcordPhraseJoinsTranslitWhenEveryWordHasOne` +
+`TestConcordPhraseLeavesTranslitEmptyWhenAnyWordIsMissingOne` (concord),
+`TestParsePopulatesTranslit` (parse), `TestAttestationPopulatesTranslit`
+(attestation); `TestCiteWordCitationIncludesMetadataInFixedOrder` updated for the
+new bracket position. Full suite green; scratch DB and CLI binary cleaned up
+after verification.
+
+### T33 - concord: surface-word matching  `DONE`
+**Goal:** let a search match the exact word as it appears in the verse (the inflected/
+vocalized `surface` form), not only its dictionary `lemma` or `dStrong` - raised
+alongside T32 as the same audience gap (someone who can read the word on the page but
+doesn't know its lemma).
+**Decided (2026-07-01):** add `surface` as a third auto-detected match column;
+**do not** widen `concord_lemma`/`Count` to span multiple corpora in one call - lemma
+and dStrong meaning is corpus/language-specific (a Greek dStrong and a Hebrew dStrong
+share nothing), so one-corpus-per-call stays the design; callers already loop per
+corpus for a cross-language search.
+**Scope:** `concord/concord.go`'s `matchColumn`/`columnExpr` currently choose only
+`dstrong` (regex-shaped) or `lemma` (default). Extend so a query matching neither the
+dStrong shape nor an existing lemma also tries `w.surface` - or add an explicit `--by
+{lemma,dstrong,surface}` override so callers aren't at the mercy of a guess. Exact
+match only (no fuzzy/diacritic-insensitive matching in this ticket - that's a
+separate, harder problem given combining-diacritic variance already noted in the
+corpus's own working conventions).
+**Acceptance:** searching the literal surface text of a known word (e.g. the exact
+pointed Hebrew or accented Greek form from a specific verse) returns that occurrence
+via `concord_lemma`/`Count`, without requiring the caller to already know the lemma.
+
+### T33 AS-BUILT (2026-07-03)
+
+Built as the **explicit override**, not the auto-detected fallback the ticket offered
+as an alternative - matching this codebase's own "explicit over magic: declared over
+inferred, never infer from names/positions/patterns" principle. A dStrong number has
+a fixed, unambiguous shape (`dstrongRe`), so auto-detecting it from the query string is
+safe; a surface form and its lemma cannot be reliably told apart from text alone, so a
+"try lemma, fall back to surface on zero rows" auto-detect would silently guess which
+column the caller meant - the same class of magic this project avoids elsewhere.
+
+`concord.ConcordLemma`/`Count` both gained a `by string` parameter (`""` = the
+original two-way auto-detect, unchanged; `"lemma"`/`"dstrong"`/`"surface"` = explicit
+override). `columnExpr` gained the `surface` -> `w.surface` case; an unknown `by`
+value fails loudly via the existing "unknown match column" error, not a silent
+fallback. `ConcordPhrase` was **not** touched - out of this ticket's scope, still
+lemma-only for its per-token matching. Threaded through `engine.Engine`
+(ConcordLemma/Count), the MCP tools (`concord_lemma`/`count` gained an optional
+`by` arg), and the CLI (`orthotomeo concord --by lemma|dstrong|surface`).
+
+**Validated against the real DB:** `orthotomeo concord ἄφεσις --corpus TAGNT` (lemma,
+default) returns all 17 inflected NT occurrences; `orthotomeo concord ἄφεσιν --corpus
+TAGNT --by surface` returns only the 12 sharing that exact accusative-singular
+spelling - a real, meaningful narrowing, not a no-op. `--by bogus` fails with
+`columnExpr: unknown match column "bogus"` rather than silently matching nothing.
+New tests: `TestConcordLemmaBySurfaceMatchesExactInflectedForm` (surface text with a
+different lemma spelling - Mat.1.1's "Βίβλος"/"βίβλος" case-difference fixture),
+`TestConcordLemmaByExplicitLemmaDoesNotMatchSurfaceText` (proves `by` is a hard column
+selector, not a widened search), `TestConcordLemmaRejectsUnknownByValue`,
+`TestCountRespectsByOverride`. Every pre-existing `ConcordLemma`/`Count` call site
+(9 in `concord_test.go`, 4 in `engine_test.go`) updated to pass `""` for unchanged
+auto-detect behavior - no behavior change for any existing caller. Full suite green.
+
+### T34 - lexicon / Strong's lookup  `DONE`
+**Goal:** resolve a `dStrong` (already present on every word `Citation`) to its
+lexicon entry - gloss and, where licensing allows, a fuller definition. Currently
+`lexicon.gloss`/`lexicon.definition` are loaded (T5) but read by **no** query path
+anywhere in the codebase.
+**License split (checked 2026-07-01 against `sources.json`):**
+- **TBESG (Greek):** `"CC BY 4.0 (definitions: Abbott-Smith 1922, Public Domain)"` -
+  gloss and definition both clear to expose.
+- **TBESH (Hebrew):** gloss is clear, but `definition` is flagged
+  `"abridged BDB via Online Bible - permission required before applying definitions"`.
+  **Explicitly out of scope for this ticket** (per this session's decision) - the
+  Hebrew `definition` column stays dormant until permission is resolved separately;
+  do not expose it as a side effect of building the Greek side.
+**Scope:** new `lexicon` package (or a function on `retriever`), `Lookup(db, dStrong)
+(Entry, error)` returning `{DStrong, Language, Lemma, Translit, Gloss, Definition
+*string}` - `Definition` is `nil` for any TBESH row (gloss-only), populated for TBESG.
+Expose as a new MCP tool / CLI subcommand / (later) HTTP endpoint, consistent with the
+existing 5-tool/5-endpoint surface (`get_verse`, `get_passage`, `concord_lemma`,
+`concord_phrase`, `parse`, `attestation` already there - this adds one more primitive,
+not a rework of them).
+**Acceptance:** looking up a Greek dStrong returns gloss + definition; looking up a
+Hebrew dStrong returns gloss only, with `Definition == nil`, not an empty string
+standing in for "not returned" (an empty string would be ambiguous with a genuinely
+empty upstream field).
+
+### T34 AS-BUILT (2026-07-03)
+
+Built as scoped, replacing rather than shadowing the old `lexicon.Lookup(db,
+dstrong) (lemma, gloss string, err error)` - confirmed via a full-repo grep that its
+only callers were its own package's tests, so widening its signature outright (new
+`Entry` type: `DStrong`, `Language`, `Lemma`, `Translit`, `Gloss`,
+`Definition *string`) was a clean replacement, not a second near-duplicate lookup
+function living alongside the first. The license gate is `e.Language != "he"`, not a
+per-row license-string parse - `def_license` already carries the full flagged text
+(`"BDB/Online Bible - permission"` vs `"Abbott-Smith PD"`, set at load time in
+`cmd/build/main.go`), but language is the simpler, equally-correct partition since
+the whole ticket's scope is literally TBESG-vs-TBESH.
+
+**A real gap the tests catch explicitly:** the Hebrew fixture's `definition` column
+is genuinely non-empty in the test data (`"father of an individual"`) - the test
+(`TestLookupWithholdsDefinitionForHebrew`) asserts the raw column really does hold a
+value AND that `Lookup` still returns `Definition == nil`, so the withholding is
+proven to be a real gate, not an accident of empty test data.
+
+Exposed as: `engine.Engine.Lookup(dstrong) (lexicon.Entry, error)`; MCP tool
+**`lexicon_lookup`** (deliberately not named `lookup` - the CLI's `orthotomeo
+lookup` subcommand already means something different, GetVerse's verse-text
+retrieval; the MCP tool description also cross-references this so an LLM client
+doesn't confuse the two); CLI subcommand **`orthotomeo define <dstrong> [--db
+path] [--json]`** (`cmd/orthotomeo/define.go`, new file - renders one Markdown
+line via a local `defineLine`, or the raw `lexicon.Entry` as JSON with
+`definition` using `omitempty` so a Hebrew lookup's JSON has no `definition` key
+at all, not a `null`).
+
+**Validated against the real DB:** `orthotomeo define G0859` returns the full
+Abbott-Smith definition text (Public Domain); `orthotomeo define H7225G` returns
+gloss only, and its `--json` output has no `definition` key whatsoever (confirmed
+directly, not assumed from `omitempty`'s general behavior); `orthotomeo define
+G9999999` (unknown dStrong) fails with a clear `sql: no rows in result set`
+wrapped error rather than a misleadingly "successful" empty result.
+
+New tests: `TestLookupPopulatesDefinitionForGreek`,
+`TestLookupWithholdsDefinitionForHebrew` (the real-column-not-empty proof above),
+`TestLookupUnknownDStrongReturnsError` (lexicon); `engine_test.go`'s shared fixture
+gained a seeded `lexicon` row and `TestEngineReachesEveryPhase5Operation` now also
+calls `e.Lookup`. Full suite green.
+
+### T35 - interlinear view  `DONE`
+**Goal:** a row-aligned original/transliteration/gloss/morphology-under-translation
+display - the composed reading view, not new engine data.
+**Decided:** this is a response-*shape* ticket, not a new retriever capability. It
+composes existing/planned primitives (`parse` for the word list, T32's `Translit` on
+each `Citation`, T34's `Lookup` for gloss) rather than adding its own DB queries.
+**Scope:** a rendering function (`engine`-level or a `cite`-adjacent package) that
+takes a `parse` result plus per-word `lexicon.Lookup` calls and produces a stacked
+per-word view: original text / transliteration / gloss / grammar, aligned under (not
+replacing) the corpus's own text. Exposed wherever T27's web UI needs it - most
+naturally as a display mode over the existing `/parse` response, not a new engine
+method.
+**Acceptance:** given a verse reference and corpus, renders one interlinear block per
+word using only data T32/T34 already expose - no new original-language data sourced
+for this ticket.
+
+### T35 AS-BUILT (2026-07-03)
+
+Built as scoped: new `interlinear` package (not folded into `cite` or `engine`
+directly), `Build(db, citations) ([]Word, error)` - one `Word` per `Citation`, Gloss
+resolved via `lexicon.Lookup` keyed by `DStrong`. No new DB queries beyond the
+lookup itself; every other field is a straight carry-through from the Citation
+(Text, Translit, Lemma, Grammar, Confidence, Caveat) - confirming the ticket's own
+framing that this sources no new original-language data.
+
+**Two failure-mode decisions made while building, not pre-specified:**
+- A Citation with no `DStrong` (compound-tagged word, untagged reading, no-data
+  placeholder) gets no gloss - skipped, not guessed.
+- A `DStrong` with no lexicon row at all (the small, T14-documented cross-file gap)
+  is *also* left gloss-less rather than failing the whole render - `Build` only
+  propagates a lookup error that isn't `sql.ErrNoRows`, so a single missing
+  dictionary entry never blocks an otherwise-good interlinear view.
+
+Added `interlinear.Render([]Word) string` as `cite.Cite`'s counterpart for this new
+shape (kept in `interlinear`, not added onto `cite.Cite` itself, since `Word` is a
+display composition over a Citation, not a Citation - `cite.Cite`'s signature stays
+exactly the Concord spec's `Cite([]Citation) string`).
+
+Exposed three ways, mirroring T34's pattern:
+- `engine.Engine.Interlinear(ref, word, corpus) ([]interlinear.Word,
+  map[string]retriever.SourceInfo, error)` - also returns the T31 sources map,
+  computed internally from the underlying Citations (the caller never needs to
+  re-run Parse just to get provenance).
+- MCP tool **`interlinear`** (reuses `wordScopedArgs`, same shape as `parse`/
+  `attestation`; new `interlinearResult{Words, Sources}` wrapper).
+- CLI **`orthotomeo interlinear <ref> --corpus C [--word N] [--json]`**
+  (`cmd/orthotomeo/interlinear.go`, new file).
+
+**Validated against the real corpus, not just fixtures:** the checked-in
+`data/orthotomeo.db` predates T32's `translit` column (confirmed: querying it
+directly fails with `no such column: translit`, since `CREATE TABLE IF NOT EXISTS`
+never retroactively alters an existing table) - `data/*.db` is gitignored, a local
+build artifact, not tracked, so this is expected, not a regression. Rebuilt a fresh
+DB from the real `bible-text`/`STEPBible-Data` roots (full `--verify` passed) and
+confirmed real interlinear output for both languages: `orthotomeo interlinear
+--corpus TAGNT MAT.26.28` shows `[touto] — this/he/she/it`, `[gar] — for`, etc.;
+`orthotomeo interlinear --corpus TAHOT --word 2 --json LEV.17.11` shows
+`"translit": "Ne.fesh", "gloss": "soul: life"` with the T31 sources map (including
+T36's `homepage_url`) attached.
+
+New tests: `TestBuildResolvesGlossByDStrong`, `TestBuildLeavesGlossEmptyWhenNoDStrong`,
+`TestBuildLeavesGlossEmptyWhenDStrongUnknownToLexicon`,
+`TestBuildPreservesCaveatAndOrder`, `TestRenderEmptySlice`,
+`TestRenderOneLinePerWordWithGloss`, `TestRenderShowsCaveatForFlaggedWord`
+(interlinear package); `TestInterlinearOverMCP`,
+`TestInterlinearRejectsInvalidWordNumberOverMCP`, `TestLexiconLookupOverMCP` (a real
+end-to-end MCP round trip, not just the Go function - this also caught that
+`lexicon_lookup` hadn't had its own over-the-wire test until now); CLI
+`TestDefineReturnsGlossAndDefinition`, `TestInterlinearIncludesGlossFromLexiconLookup`,
+`TestInterlinearJSONMatchesInterlinearPayloadShape`. Full suite green.
+
+### T36 - source homepage/reference URLs  `DONE`
+**Goal:** attach a human-facing reference link to each `sources.json` entry - "where
+this project/data lives" (STEPBible's GitHub, eBible.org, etc.) - so attribution
+surfaced by T31 (and shown in T27's print/sources footer) can link out, not just name
+the license and local file path.
+**Not the same field as `fetch_url`:** `fetch_url` is reserved for the actual download
+endpoint of a non-shippable, user-fetched source (T23's Rahlfs LXX pattern) and is
+empty for every shippable source today. This ticket adds a separate field for a
+reference/homepage link that every source can carry, shippable or not.
+**Scope:**
+- Add `homepage_url TEXT` to the `sources` table (`store/schema.sql`) and
+  `HomepageURL string \`json:"homepage_url,omitempty"\`` to `sources.Source`
+  (`sources/sources.go`), threading it through `Registry()`/`Seed()`'s insert alongside
+  the existing 10 columns.
+- Populate `sources.json` per entry. Confirmed/high-confidence today:
+  - `TAGNT`, `TAHOT`, `TBESG`, `TBESH`, `TEGMC`, `TEHMC`, `TVTMS` (7 STEPBible-Data
+    sources): `https://github.com/STEPBible/STEPBible-Data`
+  - `OpenBible-xref`: `https://www.openbible.info/labs/cross-references/`
+  - `OSS-LXX-lemma`: `https://github.com/openscriptures/GreekResources` (matches the
+    vendored `GreekResources-master/` directory name)
+  - `KJV`, `ASV` (confirmed by Justin, 2026-07-02):
+    `https://github.com/scrollmapper/bible_databases`
+  - `WEB`, `Brenton` (confirmed by Justin, 2026-07-02): `https://ebible.org/`
+  - `Swete`'s existing `attribution` already says "via archive.org" - resolve to the
+    specific archive.org item identifier used, not the bare archive.org domain.
+- `cite.Cite` / T27's sources footer: render `homepage_url` as a link when present;
+  a source with no confirmed URL yet renders exactly as it does today (license +
+  local file path only) - never a placeholder link to nowhere.
+**Acceptance:** every source with a confirmed URL surfaces it in `SourcesFor`'s output
+and, where applicable, as a clickable link in the web UI/print view; sources still
+pending confirmation are unaffected (field omitted, not null-guessed).
+
+### T36 AS-BUILT (2026-07-02)
+
+Built as scoped, with one deliberate deviation from the original scope bullet.
+`homepage_url TEXT` added to the `sources` table and `Source.HomepageURL` (both
+`store/schema.sql` and `sources/sources.go`), threaded through `Registry()`/`Seed()`'s
+insert. All 15 entries in `sources.json` got a real, confirmed URL except **Swete**
+(still open - "via archive.org" isn't specific enough to be a real reference link;
+left absent rather than guessed): 7 STEPBible-Data sources and OpenBible-xref and
+OSS-LXX-lemma were already high-confidence; KJV/ASV (`scrollmapper/bible_databases`)
+and WEB/Brenton (`ebible.org`) were confirmed directly by Justin (2026-07-02).
+
+**Deviation:** the ticket's scope said "`cite.Cite` ... render `homepage_url` as a
+link when present." Building it, this turned out to reintroduce exactly the
+redundancy T31 exists to prevent - `homepage_url` is per-*edition*, not per-row, so
+inlining it on every `cite.Cite` bullet would repeat the identical URL once per
+Citation in a multi-word result (an 18-word verse would print the same link 18
+times). Kept it **only** on `retriever.SourceInfo` (the once-per-edition map T31
+already established), not on `cite.Cite`'s Markdown line - consistent with, not a
+regression from, the existing precedent. `cite.Cite`'s rendered output is therefore
+unchanged by this ticket.
+
+**Validated against the real DB:** `orthotomeo parse --corpus TAHOT --db
+data/orthotomeo.db --json LEV.17.1` now emits `"sources":{"TAHOT":{...,
+"homepage_url":"https://github.com/STEPBible/STEPBible-Data"}}`. No DB rebuild was
+needed for this - confirmed `SourcesFor` resolves purely from the embedded
+`sources.json` via `sources.Registry()`, never queries the DB's `sources` table, so
+the checked-in `data/orthotomeo.db` (built before this schema change) still works
+correctly; only a future `cmd/build` run would also carry `homepage_url` into the
+DB's own `sources` table (used for the FK relationship, not for citation output).
+New tests: `TestHomepageURLPopulatedExceptSwete` (registry-level spot check) and
+`TestSeedRoundTripsHomepageURL` (confirms the column actually reaches the DB via a
+real `Seed` insert, not just the in-memory `Registry()`). Full suite green.
 
 ---
 
@@ -1394,6 +2373,55 @@ Concord spec §10: dumb external gates over a generated study doc - grounding (e
 original-language claim carries a Citation), completeness (cited set == Concord set),
 label-without-derivation, commentary/conclusion register. Flags, never rewrites.
 
+### T29 - Hebrew<->Greek heuristic bridge without the LXX  `V2`
+**Goal:** answer "what's the Hebrew/Greek equivalent of this word" for common
+vocabulary (not just proper names) in cases where the LXX itself isn't the right
+tool - or as a second, independent check alongside it.
+**Context (2026-07-01 session):** investigated live via `ὀρθοτομέω` (only 3
+corpus occurrences: 2Ti.2.15, and its own LXX translation of Hebrew `יָשַׁר` at
+Prov.3.6/11.5). Confirmed what does and doesn't already bridge the two languages:
+- `lexicon.ustrong` (T5, already loaded) DOES link Greek and Hebrew rows sharing a
+  `ustrong` value, but only for **proper names/named entities** (verified:
+  `H0085`/`G0011` group to "Abraham," `H0054`/`G0008` to "Abiathar") - it comes
+  from STEPBible's own `TBESG`/`TBESH` files, not a separate resource. Does not
+  help for common words - `ὀρθοτομέω`'s own `ustrong` is just itself, ungrouped.
+- `cross_references` (T21, 344,794 rows loaded) could in principle carry
+  "NT verse directly quotes this OT verse" links, which would let a Greek NT
+  word be compared straight against its Hebrew Vorlage with no LXX involved -
+  but every currently-loaded row has `kind = "thematic"` (undifferentiated
+  OpenBible/TSK topical links). A curated NT-quotation-specific list is a
+  **different dataset** than what's loaded, not something already sitting
+  unused in this data.
+- STEPBible-Data has two more unloaded resources, checked directly on disk:
+  - `Proper Nouns/TIPNR` ("Translators Individualised Proper Names with all
+    References") - richer than `TBESG`/`TBESH`'s built-in name-grouping, but
+    still proper-names-only. Doesn't solve the general-vocabulary case either.
+  - `Tagged-Bibles/TTESV` ("Tyndale Translation tags for ESV") - tags the ESV's
+    English wording to underlying Strong's numbers across **both** Testaments.
+    Closest real lead: matching where the ESV renders the same English word/
+    phrase in both an OT and NT verse gives a candidate Hebrew-Greek link
+    without going through the LXX at all - grounded in actual whole-Bible
+    translator decisions, not a two-word dictionary gloss. Still a heuristic,
+    not a certainty (English polysemy can produce false positives - a lead to
+    verify against usage, never a lookup to trust directly). **License note:**
+    CC BY-NC - more restrictive than every currently-bundled source. If ever
+    added, follow the **same pattern as T23's Rahlfs LXX** (`sources.shippable=0`,
+    user-fetched, never bundled in the repo) rather than treating "this project
+    won't be sold" as sufficient - an NC term restricts commercial use by anyone
+    downstream of a public repo, not just the original publisher's own intent.
+- Ruled out: `Older Formats/TOTHT` is a legacy predecessor of the already-loaded
+  `TAHOT` (superseded, no new capability). `Versification/TVTMS` tracks verse-
+  *numbering* differences across traditions, not word-sense equivalence (and
+  T4b already deliberately doesn't use a TVTMS rule engine).
+- Also available with **zero new data**: heuristic candidate-generation by
+  matching `TBESG`/`TBESH`'s existing `gloss` text between languages (e.g. both
+  glossed "straight"/"make straight"). Same caveat as TTESV - a lead, not a
+  lookup.
+**Not scoped further** - this is a research note, not a committed design. Any
+future ticket built from it should keep whatever it returns clearly labeled as
+a candidate/heuristic match (Confidence:Flagged-equivalent), never presented
+with the same certainty as a real LXX-mediated or cross-reference-mediated link.
+
 ---
 
 ## Dependency summary
@@ -1405,12 +2433,22 @@ T4a,T5,T6 -> T10 (TAGNT, DONE), T11 (TAHOT, DONE)
 T9,T12,T13 -> T4b (deterministic verse aligner, DONE - the align package's
      AlignWeighted/FillGap core is reusable for T22)
 T10-T13 -> T14 (completeness self-test, DONE) -> Phase 5 (T15-T19 ALL DONE)
-Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP DONE, T26 CLI DONE, T27 HTTP+web}
-T27 (HTTP+web) -> T28 (Fyne desktop launcher, Footsteps pattern)
-V2 after deps: T22 (word align, can reuse align package), T23, T24
+Phase 5 (T15..T19, DONE) -> T25 (engine facade / the seam, DONE) -> {T20 MCP DONE, T26 CLI DONE, T27 HTTP+web DONE}
+T27 (HTTP+web, DONE) -> T28 (desktop launcher, DONE - Footsteps pattern, Gio not Fyne)
+T20 (MCP, DONE) -> T31 (attribution/license surfacing, DONE) -> T30 (public remote MCP:
+     Streamable HTTP + GCP Cloud Run, single instance, in-app rate limiting)
+T5 (lexicon, DONE) -> T32 (per-word transliteration, DONE), T34 (Strong's/lexicon
+     lookup, DONE - Hebrew definition excluded pending permission)
+T16 (concordance, DONE) -> T33 (concord: surface-word matching, DONE)
+T32, T34 (both DONE) -> T35 (interlinear view, DONE) -> T27 (consumed by /interlinear)
+T31 (attribution/license surfacing, DONE) -> T36 (source homepage/reference URLs, DONE
+     - Swete's specific archive.org identifier still open, all other 14 confirmed)
+V2 after deps: T22 (word align, can reuse align package), T23, T24, T29 (research
+     note only, not yet scoped)
 ```
 
-Recommended next executable order: **T27** (HTTP + local web UI - the last
-BLOCKED transport, unblocked since T25 is done), then **T28** (Fyne desktop
-launcher). All of Phase 3 (text/word import), T4b, T14, all of Phase 5
-(T15-T19), T25, T20, and T26 are now DONE.
+Recommended next executable order: **T30** (public remote MCP over Streamable HTTP
+on GCP, unblocked since T31 is done) is the only remaining unblocked ticket outside
+V2 - **T28** (desktop launcher) is now DONE too. All of Phase 3 (text/word import),
+T4b, T14, all of Phase 5 (T15-T19), T25, T20, T26, T27, T28, T31, T32, T33, T34,
+T35, and T36 are now DONE.

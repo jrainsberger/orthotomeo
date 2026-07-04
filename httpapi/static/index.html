@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>orthotomeo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=Fragment+Mono&family=Noto+Serif:ital@0;1&family=Noto+Serif+Hebrew:wght@400;600&display=swap" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<header>
+  <div>
+    <h1>orthotomeo</h1>
+    <div class="sub">local, read-only scripture-study engine</div>
+  </div>
+  <button id="printBtn" type="button">print</button>
+</header>
+<main>
+  <form id="search">
+    <select id="mode" name="mode">
+      <option value="verse">verse</option>
+      <option value="passage">passage</option>
+      <option value="concord">concord</option>
+      <option value="parse">parse</option>
+      <option value="attest">attest</option>
+      <option value="interlinear">interlinear</option>
+      <option value="define">define</option>
+    </select>
+
+    <span class="field" data-field="book"><input type="text" name="book" placeholder="book (MAT)" list="books" autocomplete="off" /></span>
+    <span class="field" data-field="chapter"><input type="text" name="chapter" placeholder="chapter" size="4" /></span>
+    <span class="field" data-field="verse"><input type="text" name="verse" placeholder="verse" size="4" /></span>
+    <span class="field" data-field="word"><input type="text" name="word" placeholder="word # (opt)" size="6" /></span>
+
+    <span class="field" data-field="start_chapter"><input type="text" name="start_chapter" placeholder="start ch" size="6" /></span>
+    <span class="field" data-field="start_verse"><input type="text" name="start_verse" placeholder="start vs" size="6" /></span>
+    <span class="field" data-field="end_chapter"><input type="text" name="end_chapter" placeholder="end ch" size="6" /></span>
+    <span class="field" data-field="end_verse"><input type="text" name="end_verse" placeholder="end vs" size="6" /></span>
+
+    <span class="field" data-field="editions">
+      <label class="field-label">editions</label>
+      <span class="checkbox-group">
+        <label><input type="checkbox" name="editions" value="KJV" checked /> KJV</label>
+        <label><input type="checkbox" name="editions" value="ASV" /> ASV</label>
+        <label><input type="checkbox" name="editions" value="WEB" /> WEB</label>
+        <label><input type="checkbox" name="editions" value="Brenton" /> Brenton</label>
+      </span>
+    </span>
+    <span class="field" data-field="corpus">
+      <select name="corpus">
+        <option value="TAGNT">TAGNT</option>
+        <option value="TAHOT">TAHOT</option>
+        <option value="Swete">Swete</option>
+        <option value="OSS-LXX-lemma">OSS-LXX-lemma</option>
+      </select>
+    </span>
+    <span class="field" data-field="query"><input type="text" name="query" placeholder="lemma / dStrong / surface" /></span>
+    <span class="field" data-field="by">
+      <select name="by">
+        <option value="">by: auto</option>
+        <option value="lemma">by: lemma</option>
+        <option value="dstrong">by: dStrong</option>
+        <option value="surface">by: surface</option>
+      </select>
+    </span>
+    <span class="field" data-field="phrase"><input type="text" name="phrase" placeholder="phrase tokens (opt)" /></span>
+    <span class="field" data-field="window"><input type="text" name="window" placeholder="window (opt)" size="4" /></span>
+    <span class="field" data-field="dstrong"><input type="text" name="dstrong" placeholder="dStrong (G0859)" /></span>
+
+    <button type="submit">search</button>
+  </form>
+  <datalist id="books"></datalist>
+
+  <div class="status-row">
+    <a href="#" id="backLink" style="display:none;">&lsaquo; back</a>
+    <div id="status"></div>
+  </div>
+  <div id="results"></div>
+  <div id="sources"></div>
+</main>
+<footer class="credit">orthotomeo, an engine by Justin Rainsberger</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

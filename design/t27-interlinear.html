@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>orthotomeo — T27 design: interlinear</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,600;0,400;1,400&display=swap">
+<style>
+  :root{ --font-scripture:"Spectral", Georgia, serif; --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body{ --bg:#E6EEF5; --surface:#F4F8FB; --ink-scripture:#173A5E; --ink-prose:#4A6079;
+        --ink-verse:#173A5E; --accent:#9E762B; --emphasis:#845F1E; --rule:#d3e0ea;
+        margin:0; background:var(--bg); color:var(--ink-prose); font-family:var(--font-ui);
+        line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .stage{ max-width:44rem; margin:0 auto; padding:2rem 1.4rem; }
+</style>
+</head>
+<body>
+<div class="stage">
+<div style="padding:1.4rem;">
+
+  <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:.9rem; margin-bottom:1rem; border-bottom:1px solid var(--rule);">
+    <span style="font-family:var(--font-scripture); font-weight:600; color:var(--ink-scripture); font-size:1.1rem;">orthotomeo</span>
+    <span style="font-size:.72rem; color:var(--ink-prose); opacity:.6; font-family:ui-monospace,Menlo,Consolas,monospace;">GET /interlinear</span>
+  </div>
+
+  <div style="display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1rem;">
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">verse</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">passage</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">concord</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">parse</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">attest</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--accent); color:var(--accent); border-radius:999px; padding:.2rem .65rem;">interlinear</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">define</span>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:.5rem; align-items:flex-end; background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:.7rem; margin-bottom:1rem;">
+    <div><div style="font-size:.62rem; color:var(--ink-prose); opacity:.7; margin-bottom:.15rem;">book</div><input type="text" value="LEV" style="width:4rem; border:1px solid var(--rule); border-radius:6px; padding:.4rem .5rem; color:var(--ink-scripture); background:#fff;" /></div>
+    <div><div style="font-size:.62rem; color:var(--ink-prose); opacity:.7; margin-bottom:.15rem;">ch</div><input type="text" value="17" style="width:2.6rem; border:1px solid var(--rule); border-radius:6px; padding:.4rem .5rem; color:var(--ink-scripture); background:#fff;" /></div>
+    <div><div style="font-size:.62rem; color:var(--ink-prose); opacity:.7; margin-bottom:.15rem;">vs</div><input type="text" value="11" style="width:2.6rem; border:1px solid var(--rule); border-radius:6px; padding:.4rem .5rem; color:var(--ink-scripture); background:#fff;" /></div>
+    <div>
+      <div style="font-size:.62rem; color:var(--ink-prose); opacity:.7; margin-bottom:.15rem;">corpus</div>
+      <select style="width:8rem; border:1px solid var(--rule); border-radius:6px; padding:.42rem .5rem; background:#fff; color:var(--ink-scripture);">
+        <option>TAGNT</option>
+        <option selected>TAHOT</option>
+        <option>Swete</option>
+        <option>OSS-LXX-lemma</option>
+      </select>
+    </div>
+    <button style="font-family:var(--font-ui); font-size:.78rem; color:var(--ink-scripture); background:none; border:1px solid var(--rule); border-radius:999px; padding:.45rem .9rem; cursor:pointer;">search</button>
+  </div>
+
+  <div style="font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-prose); opacity:.7; margin-bottom:.6rem;">reading view &middot; Leviticus 17:11 &middot; TAHOT</div>
+
+  <div style="border:1px solid var(--rule); border-radius:9px; overflow:hidden; margin-bottom:1rem;">
+    <table style="width:100%; border-collapse:collapse; font-family:var(--font-ui); font-size:.8rem; table-layout:fixed;">
+      <colgroup><col style="width:118px;"/><col style="width:auto;"/><col style="width:100px;"/><col style="width:78px;"/></colgroup>
+      <thead>
+        <tr style="background:var(--surface);">
+          <th style="text-align:right; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">text</th>
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">gloss</th>
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">grammar</th>
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">confidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:.5rem; text-align:right; border-bottom:1px solid var(--rule);">
+            <div dir="rtl" style="font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem;">כִּ֣י</div>
+            <div style="font-family:var(--font-scripture); font-style:italic; color:var(--ink-prose); opacity:.75; font-size:.72rem; margin-top:.1rem;">ki</div>
+          </td>
+          <td style="padding:.5rem; color:var(--ink-prose); border-bottom:1px solid var(--rule);">for</td>
+          <td style="padding:.5rem; color:var(--ink-prose); font-size:.74rem; border-bottom:1px solid var(--rule);">HTc (Particle; Conditional)</td>
+          <td style="padding:.5rem; border-bottom:1px solid var(--rule);"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+        <tr>
+          <td style="padding:.5rem; text-align:right; border-bottom:1px solid var(--rule);">
+            <div dir="rtl" style="font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem;">נֶ֣פֶשׁ</div>
+            <div style="font-family:var(--font-scripture); font-style:italic; color:var(--ink-prose); opacity:.75; font-size:.72rem; margin-top:.1rem;">Ne.fesh</div>
+          </td>
+          <td style="padding:.5rem; color:var(--ink-prose); border-bottom:1px solid var(--rule);">soul: life</td>
+          <td style="padding:.5rem; color:var(--ink-prose); font-size:.74rem; border-bottom:1px solid var(--rule);">HNcfsc (Noun; Fem; Sg; Construct)</td>
+          <td style="padding:.5rem; border-bottom:1px solid var(--rule);"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+        <tr>
+          <td style="padding:.5rem; text-align:right;">
+            <div dir="rtl" style="font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem;">הַ/בָּשָׂר֮</div>
+            <div style="font-family:var(--font-scripture); font-style:italic; color:var(--ink-prose); opacity:.75; font-size:.72rem; margin-top:.1rem;">ha./ba.Sar</div>
+          </td>
+          <td style="padding:.5rem; color:var(--ink-prose);">flesh</td>
+          <td style="padding:.5rem; color:var(--ink-prose); font-size:.74rem;">HNcmsa (Noun; Masc; Sg; Absolute)</td>
+          <td style="padding:.5rem;"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="text-align:center; font-size:.72rem; color:var(--ink-prose); opacity:.6; padding:.5rem;">&hellip; 15 more words &hellip;</div>
+  </div>
+
+  <div style="border-top:1px solid var(--rule); padding-top:.9rem;">
+    <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-prose); opacity:.7; margin-bottom:.55rem;">sources</div>
+    <div style="display:flex; align-items:center; gap:.7rem; background:var(--surface); border:1px solid var(--rule); border-radius:9px; padding:.55rem .8rem;">
+      <span style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.76rem; color:var(--ink-scripture); font-weight:600;">TAHOT</span>
+      <span style="font-size:.76rem; color:var(--ink-prose); flex:1;">STEPBible-Data/Translators Amalgamated OT+NT/TAHOT*.txt</span>
+      <span style="font-size:.68rem; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">CC BY 4.0</span>
+    </div>
+  </div>
+</div>
+</div>
+</body>
+</html>

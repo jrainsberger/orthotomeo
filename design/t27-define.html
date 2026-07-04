@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>orthotomeo — T27 design: define</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,600;0,400;1,400&display=swap">
+<style>
+  :root{ --font-scripture:"Spectral", Georgia, serif; --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body{ --bg:#E6EEF5; --surface:#F4F8FB; --ink-scripture:#173A5E; --ink-prose:#4A6079;
+        --ink-verse:#173A5E; --accent:#9E762B; --emphasis:#845F1E; --rule:#d3e0ea;
+        margin:0; background:var(--bg); color:var(--ink-prose); font-family:var(--font-ui);
+        line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .stage{ max-width:44rem; margin:0 auto; padding:2rem 1.4rem; }
+</style>
+</head>
+<body>
+<div class="stage">
+<div style="padding:1.4rem;">
+
+  <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:.9rem; margin-bottom:1rem; border-bottom:1px solid var(--rule);">
+    <span style="font-family:var(--font-scripture); font-weight:600; color:var(--ink-scripture); font-size:1.1rem;">orthotomeo</span>
+    <span style="font-size:.72rem; color:var(--ink-prose); opacity:.6; font-family:ui-monospace,Menlo,Consolas,monospace;">GET /define</span>
+  </div>
+
+  <div style="display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1rem;">
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">verse</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">passage</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">concord</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">parse</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">attest</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--rule); color:var(--ink-prose); opacity:.6; border-radius:999px; padding:.2rem .65rem;">interlinear</span>
+    <span style="font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; border:1px solid var(--accent); color:var(--accent); border-radius:999px; padding:.2rem .65rem;">define</span>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:.5rem; align-items:flex-end; background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:.7rem; margin-bottom:1rem;">
+    <div style="flex:1; min-width:9rem;">
+      <div style="font-size:.62rem; color:var(--ink-prose); opacity:.7; margin-bottom:.15rem;">dstrong</div>
+      <input type="text" value="G0859" style="width:100%; border:1px solid var(--rule); border-radius:6px; padding:.4rem .5rem; font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--ink-scripture); background:#fff;" />
+    </div>
+    <button style="font-family:var(--font-ui); font-size:.78rem; color:var(--ink-scripture); background:none; border:1px solid var(--rule); border-radius:999px; padding:.45rem .9rem; cursor:pointer;">search</button>
+  </div>
+
+  <div style="background:var(--surface); border:1px solid var(--rule); border-radius:9px; padding:1rem 1.1rem;">
+    <div style="display:flex; align-items:baseline; gap:.6rem; margin-bottom:.6rem;">
+      <span style="font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:600; color:var(--ink-scripture); font-size:.95rem;">G0859</span>
+      <span style="font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.15rem;">ἄφεσις</span>
+      <span style="font-family:var(--font-scripture); font-style:italic; color:var(--ink-prose); opacity:.75; font-size:.85rem;">aphesis</span>
+    </div>
+    <div style="font-size:.9rem; color:var(--ink-scripture); font-weight:600; margin-bottom:.6rem;">forgiveness</div>
+    <div style="font-family:var(--font-scripture); color:var(--ink-prose); font-size:.86rem; line-height:1.5; border-top:1px solid var(--rule); padding-top:.6rem;">
+      <b style="font-family:var(--font-scripture);">ἄφεσις</b>, -εως, ἡ (ἀφίημι) &mdash; <b>1.</b> dismissal, release: Luk.4:18. <b>2.</b> Metaphorical, of sins, pardon, remission of penalty: Mat.26:28, Mrk.1:4, Luk.1:77, Act.2:38&hellip;
+    </div>
+    <div style="margin-top:.7rem; display:flex; gap:.5rem;">
+      <span style="font-size:.68rem; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">via TBESG</span>
+      <span style="font-size:.68rem; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">Abbott-Smith 1922, Public Domain</span>
+    </div>
+  </div>
+
+  <div style="font-size:.72rem; font-style:italic; color:var(--ink-prose); opacity:.7; margin-top:.8rem;">Hebrew dStrongs return gloss only here - the fuller definition (abridged BDB) is withheld pending permission (T34).</div>
+</div>
+</div>
+</body>
+</html>

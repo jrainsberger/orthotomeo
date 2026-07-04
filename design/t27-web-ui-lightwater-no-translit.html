@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>orthotomeo — T27 web UI (lightwater, pre-transliteration iteration)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  :root{ --font-scripture:"Spectral", Georgia, serif; --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body{ --bg:#E6EEF5; --surface:#F4F8FB; --ink-scripture:#173A5E; --ink-prose:#4A6079;
+        --ink-verse:#173A5E; --accent:#9E762B; --emphasis:#845F1E; --rule:#d3e0ea;
+        margin:0; background:var(--bg); color:var(--ink-prose); font-family:var(--font-ui);
+        line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .stage{ max-width:44rem; margin:0 auto; padding:2rem 1.4rem; }
+  .card{ background:var(--bg); border-radius:12px; }
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="card" style="padding:1.4rem;">
+
+  <div style="display:flex; align-items:center; justify-content:space-between; padding-bottom:.9rem; margin-bottom:1rem; border-bottom:1px solid var(--rule);">
+    <div style="display:flex; align-items:center; gap:.5rem;">
+      <span style="font-family:var(--font-scripture); font-weight:600; color:var(--ink-scripture); font-size:1.1rem;">orthotomeo</span>
+      <span style="font-size:.72rem; color:var(--ink-prose); opacity:.7;">local, read-only</span>
+    </div>
+    <span style="font-size:.72rem; color:var(--ink-prose); opacity:.6; font-family:ui-monospace,Menlo,Consolas,monospace;">127.0.0.1:8420</span>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:.5rem; background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:.6rem .75rem; margin-bottom:1rem;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="width:14px; height:14px; flex:0 0 auto;"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    <input type="text" value="LEV.17.11" style="flex:1.2; min-width:0; border:none; background:none; outline:none; color:var(--ink-scripture); font-family:var(--font-ui); font-size:.9rem;" aria-label="reference" />
+    <select style="flex:1; border:1px solid var(--rule); border-radius:6px; background:var(--surface); color:var(--ink-prose); font-family:var(--font-ui); font-size:.82rem; padding:.3rem .4rem;" aria-label="corpus">
+      <option>TAHOT</option>
+      <option>TAGNT</option>
+      <option>KJV</option>
+      <option>ASV</option>
+      <option>WEB</option>
+      <option>Brenton LXX</option>
+    </select>
+    <button style="font-family:var(--font-ui); font-size:.78rem; color:var(--ink-scripture); background:none; border:1px solid var(--rule); border-radius:999px; padding:.35rem .8rem; cursor:pointer;">search</button>
+  </div>
+
+  <div style="font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-prose); opacity:.7; margin-bottom:.7rem;">18 words &middot; Leviticus 17:11 &middot; TAHOT</div>
+
+  <div style="border:1px solid var(--rule); border-radius:9px; overflow:hidden; margin-bottom:1rem;">
+    <table style="width:100%; border-collapse:collapse; font-family:var(--font-ui); font-size:.8rem; table-layout:fixed;">
+      <colgroup>
+        <col style="width:26px;" /><col style="width:118px;" /><col style="width:100px;" /><col style="width:64px;" /><col style="width:150px;" /><col style="width:78px;" />
+      </colgroup>
+      <thead>
+        <tr style="background:var(--surface);">
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">#</th>
+          <th style="text-align:right; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">text</th>
+          <th style="text-align:right; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">lemma</th>
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">dstrong</th>
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">grammar</th>
+          <th style="text-align:left; font-weight:600; color:var(--ink-scripture); padding:.5rem .5rem; border-bottom:1px solid var(--rule);">confidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:.5rem; color:var(--ink-prose); opacity:.6; border-bottom:1px solid var(--rule);">1</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem; border-bottom:1px solid var(--rule);">כִּי</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-prose); border-bottom:1px solid var(--rule);">כִּי</td>
+          <td style="padding:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--ink-prose); border-bottom:1px solid var(--rule);">H3588</td>
+          <td style="padding:.5rem; color:var(--ink-prose); border-bottom:1px solid var(--rule);">Conj</td>
+          <td style="padding:.5rem; border-bottom:1px solid var(--rule);"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+        <tr>
+          <td style="padding:.5rem; color:var(--ink-prose); opacity:.6; border-bottom:1px solid var(--rule);">2</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem; border-bottom:1px solid var(--rule);">נֶ֣פֶשׁ</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-prose); border-bottom:1px solid var(--rule);">נֶפֶשׁ</td>
+          <td style="padding:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--ink-prose); border-bottom:1px solid var(--rule);">H5315</td>
+          <td style="padding:.5rem; color:var(--ink-prose); border-bottom:1px solid var(--rule);">N-fs</td>
+          <td style="padding:.5rem; border-bottom:1px solid var(--rule);"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+        <tr>
+          <td style="padding:.5rem; color:var(--ink-prose); opacity:.6; border-bottom:1px solid var(--rule);">3</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem; border-bottom:1px solid var(--rule);">הַ֠בָּשָׂר</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-prose); border-bottom:1px solid var(--rule);">בָּשָׂר</td>
+          <td style="padding:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--ink-prose); border-bottom:1px solid var(--rule);">H1320</td>
+          <td style="padding:.5rem; color:var(--ink-prose); border-bottom:1px solid var(--rule);">Art+N-ms</td>
+          <td style="padding:.5rem; border-bottom:1px solid var(--rule);"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+        <tr>
+          <td style="padding:.5rem; color:var(--ink-prose); opacity:.6;">4</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-verse); font-size:1.05rem;">בַּדָּ֣ם</td>
+          <td style="padding:.5rem; text-align:right; direction:rtl; font-family:var(--font-scripture); color:var(--ink-prose);">דָּם</td>
+          <td style="padding:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--ink-prose);">H1818</td>
+          <td style="padding:.5rem; color:var(--ink-prose);">Prep+N-ms</td>
+          <td style="padding:.5rem;"><span style="font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">high</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="text-align:center; font-size:.72rem; color:var(--ink-prose); opacity:.6; padding:.5rem;">&hellip; 14 more words &hellip;</div>
+  </div>
+
+  <div style="border-top:1px solid var(--rule); padding-top:.9rem;">
+    <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-prose); opacity:.7; margin-bottom:.55rem;">sources (1 distinct edition, not repeated per word)</div>
+    <div style="display:flex; align-items:center; gap:.7rem; background:var(--surface); border:1px solid var(--rule); border-radius:9px; padding:.6rem .8rem;">
+      <span style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.76rem; color:var(--ink-scripture); font-weight:600;">TAHOT</span>
+      <span style="font-size:.76rem; color:var(--ink-prose); flex:1;">STEPBible-Data/Translators Amalgamated OT+NT/TAHOT*.txt</span>
+      <span style="font-size:.68rem; color:var(--accent); border:1px solid var(--rule); border-radius:999px; padding:.1rem .55rem;">CC BY 4.0</span>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,273 @@
+:root {
+  --font-display: "STIX Two Text", Georgia, serif;
+  --font-grc: "Noto Serif", serif;
+  --font-heb: "Noto Serif Hebrew", serif;
+  --font-mono: "Fragment Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+body {
+  --paper: #F5F2EA;
+  --surface: #FBF9F3;
+  --ink: #1C1B18;
+  --ink-muted: #5A5648;
+  --rule: #D6D0C0;
+  --rubric: #8A2E1C;
+  --indigo: #26314C;
+  --gilt: #9C7A2E;
+}
+
+* { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  line-height: 1.5;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+header h1 { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; margin: 0; color: var(--ink); }
+header .sub { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.04em; color: var(--ink-muted); }
+
+main {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+footer.credit {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem 1.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+}
+
+form#search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+form#search select, form#search input, form#search button {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+form#search input[type=text] { flex: 1 1 10rem; min-width: 7rem; }
+
+.checkbox-group {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.42rem 0.6rem;
+}
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.checkbox-group input[type="checkbox"] {
+  accent-color: var(--rubric);
+  margin: 0;
+  cursor: pointer;
+}
+
+form#search button {
+  background: none;
+  color: var(--rubric);
+  border-color: var(--rubric);
+  border-radius: 4px;
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+form#search button:hover { background: var(--rubric); color: var(--surface); }
+
+.field { display: none; }
+.field.active { display: flex; align-items: center; }
+.field.active:has(.field-label) { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+.field-label { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-muted); }
+
+.status-row { display: flex; align-items: baseline; gap: 0.8rem; margin-bottom: 0.75rem; }
+#status { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-muted); }
+#status.error { color: var(--rubric); }
+#backLink { font-family: var(--font-mono); font-size: 0.78rem; color: var(--rubric); text-decoration: none; }
+#backLink:hover { text-decoration: underline; }
+
+/* Cross-links (dStrong / lemma / ref cells): real <a> elements, not divs
+   with an onclick - keyboard tab order and Enter-to-activate come free,
+   and a visible focus ring matters here since these are the one part of
+   the results table a keyboard user needs to reach. */
+.xlink {
+  color: var(--rubric);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--rubric);
+  cursor: pointer;
+}
+.xlink:hover, .xlink:focus-visible { border-bottom-style: solid; }
+.xlink:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+.mono-cell { font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink-muted); }
+
+/* Gloss hover preview: a lightweight "what does this mean" for skimming
+   many dStrong cells without leaving the results table - the click-through
+   to /define still owns the full gloss + definition + translit view. */
+.gloss-tooltip {
+  position: absolute;
+  display: none;
+  z-index: 10;
+  max-width: 22rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+/* Apparatus table: a left rubric rule + a footnote-style ordinal mark per
+   row, in place of a plain numbered index column - the citation number IS
+   a footnote reference, styled the way a critical edition marks one. */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.85rem;
+}
+
+th, td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-muted); font-weight: 400; background: var(--surface); }
+tbody tr:last-of-type td { border-bottom: none; }
+
+td.ordinal {
+  width: 1.8rem;
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--rubric);
+  font-size: 0.82rem;
+  text-align: center;
+  border-right: 2px solid var(--rubric);
+}
+
+.orig { font-size: 1.1rem; text-align: right; }
+.orig-text { font-family: var(--font-heb), var(--font-grc); color: var(--indigo); }
+.translit { font-family: var(--font-display); font-style: italic; color: var(--ink-muted); font-size: 0.76rem; }
+
+.badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gilt);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.1rem 0.5rem;
+}
+
+.caveat { font-family: var(--font-display); font-size: 0.8rem; font-style: italic; color: var(--ink-muted); }
+
+/* Colophon: the scribal note naming a manuscript's origin at its close -
+   reused here for per-result data provenance, the same information a
+   generic "sources" list would carry, but in the vocabulary of the
+   subject matter itself. */
+#sources {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+#sources h2 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin: 0 0 0.6rem;
+}
+#sources h2::before { content: "\2042  "; color: var(--rubric); font-style: normal; }
+.source-row {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.55rem 0.8rem;
+  margin-bottom: 0.4rem;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+.source-row .code { font-family: var(--font-mono); font-style: normal; font-weight: 600; color: var(--ink); }
+.source-row .path { flex: 1; }
+.source-row a { color: var(--rubric); }
+
+.entry-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+}
+.entry-heading { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.entry-dstrong { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-size: 0.9rem; }
+.entry-lemma { font-family: var(--font-heb), var(--font-grc); color: var(--indigo); font-size: 1.2rem; }
+.entry-translit { font-family: var(--font-display); font-style: italic; color: var(--ink-muted); font-size: 0.85rem; }
+.entry-gloss { font-family: var(--font-display); font-size: 0.92rem; color: var(--rubric); font-weight: 600; margin-bottom: 0.6rem; }
+.entry-definition { font-family: var(--font-display); color: var(--ink); font-size: 0.86rem; line-height: 1.55; border-top: 1px solid var(--rule); padding-top: 0.6rem; }
+
+@media print {
+  form#search, header .sub, #printBtn { display: none; }
+  header { border-bottom: 2px solid #000; }
+  body { background: #fff; color: #000; }
+  table { border-color: #000; }
+  th, td { border-color: #000; }
+  td.ordinal { border-right-color: #000; color: #000; }
+  .badge, .entry-card, .source-row { border: 1px solid #000 !important; color: #000 !important; }
+  tr { page-break-inside: avoid; }
+  #sources { border-top: 2px solid #000; page-break-inside: avoid; }
+}

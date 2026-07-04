@@ -44,10 +44,12 @@ error - it does not silently truncate, guess, or paraphrase.
 - A Go **engine** package (the single read-only seam) exposing reference
   resolution, verbatim verse/passage lookup, lemma/phrase concordance,
   parse/lemmatize, manuscript attestation, and a citation renderer.
-- Three transports over that one engine: an **MCP server**
+- Five transports over that one engine: an **MCP server**
   (`cmd/orthotomeo-mcp`) for use from an LLM chat client, a **CLI**
-  (`cmd/orthotomeo`) for terminal use, and the engine package itself if you want
-  to embed it directly in Go.
+  (`cmd/orthotomeo`) for terminal use, an **HTTP API + local web UI**
+  (`httpapi`, served by `cmd/orthotomeo-web`), a **desktop launcher**
+  (`cmd/orthotomeo-desktop`) that starts the web server and opens a browser to
+  it, and the engine package itself if you want to embed it directly in Go.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full design (read its cross-cutting
 invariants first) and [docs/erd-v1.svg](docs/erd-v1.svg) for the data model.
@@ -130,9 +132,11 @@ go build -o orthotomeo-mcp ./cmd/orthotomeo-mcp
 }
 ```
 
-Ten tools are exposed: `resolve_ref`, `get_verse`, `get_passage`,
+Twelve tools are exposed: `resolve_ref`, `get_verse`, `get_passage`,
 `concord_lemma`, `concord_phrase`, `count`, `parse`, `lemmatize`,
-`attestation`, `cite`.
+`attestation`, `interlinear`, `lexicon_lookup`, `cite`. Every `book` argument
+accepts a USFM code or the full English book name, in any case (`MAT`,
+`mat`, `Matthew`, `MATTHEW` all resolve to the same book).
 
 ### As a CLI
 
@@ -143,9 +147,35 @@ orthotomeo concord --corpus TAGNT --phrase "εἰς,ἄφεσις" --adjacent
 orthotomeo lookup --edition KJV,ASV,WEB MAT.26.28      # verbatim verse text
 orthotomeo parse --corpus TAGNT --word 2 MRK.16.16     # dStrong + expanded morphology
 orthotomeo attest --corpus TAGNT MRK.16.16             # manuscript attestation (Type/Editions)
+orthotomeo define G0859                                # lexicon/Strong's lookup
+orthotomeo interlinear --corpus TAGNT MRK.16.16         # row-aligned original/translit/gloss/grammar
 ```
 
-Every subcommand also takes `--json` for machine-readable output.
+Every subcommand also takes `--json` for machine-readable output. A ref's
+book token (e.g. the `MAT` in `MAT.26.28`) accepts a USFM code or the full
+English name, in any case.
+
+### As an HTTP API + local web UI
+
+```sh
+go build -o orthotomeo-web ./cmd/orthotomeo-web
+./orthotomeo-web --db data/orthotomeo.db   # loopback only, default port 8420
+```
+
+Open `http://127.0.0.1:8420/` for the web UI, or hit the GET-only JSON
+endpoints directly: `/verse`, `/passage`, `/concord`, `/parse`, `/attest`,
+`/interlinear`, `/define`, `/books` (the canonical 66-book registry, used by
+the UI's book-field autocomplete).
+
+### As a desktop app
+
+```sh
+go build -ldflags -H=windowsgui -o orthotomeo-desktop.exe ./cmd/orthotomeo-desktop
+```
+
+A native GUI shell (renders no scripture itself) that starts the HTTP
+server on an ephemeral loopback port, opens your browser to it, and shuts
+the server down cleanly on close.
 
 ### As a Go library
 
@@ -154,7 +184,7 @@ e, err := engine.Open("data/orthotomeo.db") // opens read-only
 if err != nil { ... }
 defer e.Close()
 
-citations, err := e.ConcordLemma("G0859", "TAGNT")
+citations, err := e.ConcordLemma("G0859", "TAGNT", "") // by: "" (auto-detect), "lemma", "dstrong", or "surface"
 fmt.Println(e.Cite(citations)) // Markdown-formatted, fully cited
 ```
 

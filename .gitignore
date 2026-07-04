@@ -7,6 +7,7 @@
 /orthotomeo
 /orthotomeo-mcp
 /orthotomeo-web
+/orthotomeo-desktop
 /orthotomeo*.exe
 *.test
 *.out

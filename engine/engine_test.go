@@ -148,3 +148,29 @@ func TestEngineOpenFailsOnMissingFile(t *testing.T) {
 		t.Fatal("expected an error opening a nonexistent DB read-only")
 	}
 }
+
+// TestEngineOpenRejectsStaleSchema covers the real bug this guards against:
+// a DB built before schema.sql gained a column (words.translit, then
+// sources.homepage_url) opened fine and only failed deep inside a query
+// with a cryptic "no such column" error. Simulates a stale DB by stamping
+// user_version back down after a normal ApplySchema.
+func TestEngineOpenRejectsStaleSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stale.db")
+	db, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := store.ApplySchema(db); err != nil {
+		t.Fatalf("apply schema: %v", err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 0;`); err != nil {
+		t.Fatalf("downgrade user_version: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close build handle: %v", err)
+	}
+
+	if _, err := engine.Open(path); err == nil {
+		t.Fatal("expected Open to reject a DB stamped with an older schema version")
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/jrainsberger/orthotomeo/lexicon"
 	"github.com/jrainsberger/orthotomeo/parse"
 	"github.com/jrainsberger/orthotomeo/retriever"
+	"github.com/jrainsberger/orthotomeo/store"
 
 	_ "modernc.org/sqlite"
 )
@@ -47,6 +48,18 @@ func Open(dbPath string) (*Engine, error) {
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping %s: %w", dbPath, err)
+	}
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version;`).Scan(&version); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("read schema version: %w", err)
+	}
+	if version < store.SchemaVersion {
+		db.Close()
+		return nil, fmt.Errorf(
+			"%s was built against an older schema (version %d, want %d) - "+
+				"delete it and rebuild via cmd/build (see README.md)",
+			dbPath, version, store.SchemaVersion)
 	}
 	return &Engine{db: db}, nil
 }

@@ -2480,6 +2480,43 @@ five fixes, each committed separately:
 All five: full suite green, `orthotomeo-desktop.exe` rebuilt where static
 assets changed.
 
+**Sixth fix (2026-07-06), from the same real-usage feedback thread: case-
+sensitive lemma matching.** Querying a proper noun's lemma (e.g. lowercase,
+correctly-accented "ιησους"/Jesus) returned 0 results even though the corpus
+carries 988 real occurrences of the capitalized `Ἰησοῦς` - `lexnorm.NFC`
+only normalizes Unicode composition, never case. 579 of TAGNT's 5407
+distinct lemma strings start capitalized (proper nouns), so this was broad,
+not an edge case.
+
+**Design decision (asked, not assumed):** case-insensitive lemma matching is
+now the default - ancient manuscripts had no letter-case distinction at all;
+capitalizing proper nouns in a printed citation form is a modern editorial
+convention, not something the text itself distinguishes, so folding it is
+textually faithful, not a loosened rule. This does create one real
+ambiguity: 6 TAGNT lemmas are genuinely different words spelled identically
+apart from case (e.g. `Στέφανος` "Stephen" vs `στέφανος` "crown" - 25 real
+occurrences split between both senses). Decided: return the complete union
+(never guess which sense was meant), but every Citation whose own
+`morph_code` carries STEPBible's `Name type=` tag (a proper-noun marker
+already present in the loaded `morph_codes` data) gets an automatic caveat -
+driven by the word's actual morphology tag, not its surface capitalization,
+so it fires correctly even where the source's own capitalization is
+inconsistent (verified live: Acts 8:2's `στέφανος` is stored lowercase in
+the corpus but still correctly caveated as Stephen).
+
+`concord.resolveLemmaVariants` resolves a lemma query to every real stored
+lemma string that case-insensitively names the same word (composing with
+the ὕδωρ/ὕδατος compound-form fix - `matchClause` now ORs a clause per
+resolved variant); `nameTypeCaveat`/`appendCaveat` compose the new note onto
+whatever caveat a word already carried, rather than overwriting it.
+`dstrong`/`surface` matching is untouched - the case convention is
+lemma-specific.
+
+Validated against the real corpus DB (read-only): lowercase `Ἰησοῦς` query
+returns all 988 occurrences with the name-type caveat; `στέφανος` query
+returns all 25 real occurrences (both senses), caveat present on every
+Stephen row, absent from every crown row. Full suite green.
+
 ---
 
 ## Dependency summary

@@ -360,6 +360,82 @@ func TestConcordPhraseRequiresAtLeastTwoTokens(t *testing.T) {
 	}
 }
 
+// TestConcordMatchesCompoundCitationFormLemma is the direct regression test
+// for a real false negative found in use: John 3:5's TAGNT row for ὕδατος
+// carries the compound STEPBible citation-form lemma "ὕδωρ, ὕδατος" (an
+// irregular noun's nominative+genitive, since the genitive stem isn't
+// predictable from the nominative) - not bare "ὕδωρ". Before matchClause,
+// concord_phrase ["ὕδωρ","πνεῦμα"] came back silently empty against a verse
+// that plainly has both words in order - a complete-or-fail violation that
+// looked like a clean empty result, not an error.
+func TestConcordMatchesCompoundCitationFormLemma(t *testing.T) {
+	db := setup(t)
+	jhnBook := bookID(t, db, "JHN")
+	v := insertVerse(t, db, "canonical", jhnBook, 3, 5)
+	insertWord(t, db, v, "TAGNT", 1, "ὕδατος", "ὕδωρ, ὕδατος", "G5204", "N-GSN")
+	insertWord(t, db, v, "TAGNT", 2, "καὶ", "καί", "G2532", "CONJ")
+	insertWord(t, db, v, "TAGNT", 3, "πνεύματος", "πνεῦμα", "G4151", "N-GSN")
+
+	t.Run("ConcordLemma finds the bare form", func(t *testing.T) {
+		cs, err := concord.ConcordLemma(db, "ὕδωρ", "TAGNT", "lemma")
+		if err != nil {
+			t.Fatalf("concord: %v", err)
+		}
+		if len(cs) != 1 || cs[0].Lemma != "ὕδωρ, ὕδατος" {
+			t.Errorf("citations = %+v, want 1 row with the real stored compound lemma", cs)
+		}
+	})
+
+	t.Run("Count agrees with ConcordLemma", func(t *testing.T) {
+		tally, err := concord.Count(db, "ὕδωρ", "TAGNT", "lemma")
+		if err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if tally.Total != 1 {
+			t.Errorf("count.Total = %d, want 1", tally.Total)
+		}
+	})
+
+	t.Run("ConcordPhrase finds the real John 3:5 case", func(t *testing.T) {
+		cs, err := concord.ConcordPhrase(db, []string{"ὕδωρ", "πνεῦμα"}, "TAGNT", 1)
+		if err != nil {
+			t.Fatalf("concord phrase: %v", err)
+		}
+		if len(cs) != 1 {
+			t.Fatalf("citations = %d, want 1 (Jhn.3.5)", len(cs))
+		}
+	})
+
+	t.Run("a bare substring of the compound form does not match", func(t *testing.T) {
+		cs, err := concord.ConcordLemma(db, "ὕδα", "TAGNT", "lemma")
+		if err != nil {
+			t.Fatalf("concord: %v", err)
+		}
+		if len(cs) != 0 {
+			t.Errorf("citations = %+v, want 0 - a partial prefix must not false-positive match", cs)
+		}
+	})
+}
+
+// TestConcordMatchesMiddleElementOfThreeWayCompoundLemma covers the other
+// boundary matchClause's LIKE patterns must get right: a compound lemma
+// with three comma-joined forms (a real TAGNT shape, e.g. "Δαυείδ, Δαυίδ,
+// Δαβίδ" for David), matching on the middle element.
+func TestConcordMatchesMiddleElementOfThreeWayCompoundLemma(t *testing.T) {
+	db := setup(t)
+	lukBook := bookID(t, db, "LUK")
+	v := insertVerse(t, db, "canonical", lukBook, 99, 2)
+	insertWord(t, db, v, "TAGNT", 1, "Δαυίδ", "Δαυείδ, Δαυίδ, Δαβίδ", "G1138", "N-PRI")
+
+	cs, err := concord.ConcordLemma(db, "Δαυίδ", "TAGNT", "lemma")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1 (middle element of a three-way compound lemma)", len(cs))
+	}
+}
+
 // oxiaBaptizo/tonosBaptizo are the two Unicode forms of the same word
 // (baptizo): oxiaBaptizo uses the Greek Extended "oxia" accent (U+1F77) -
 // the raw form STEPBible's TAGNT source files actually use before

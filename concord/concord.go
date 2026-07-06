@@ -60,6 +60,38 @@ func columnExpr(col string) (string, error) {
 	}
 }
 
+// likeEscaper escapes LIKE's own wildcards (% and _) in a caller-supplied
+// value before it's spliced into a LIKE pattern, so a query containing one
+// of those characters is matched literally rather than as a wildcard.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// matchClause builds the WHERE fragment (with placeholders) and its bind
+// args for matching expr against value. For every column except lemma this
+// is plain equality. w.lemma needs more: STEPBible's TAGNT source gives
+// some irregular nouns a compound citation form - both nominative and
+// genitive joined by ", " (e.g. "ὕδωρ, ὕδατος" for ὕδωρ, since its genitive
+// stem isn't predictable from the nominative) - stored verbatim as one
+// lemma string (51 distinct compound forms / 3306 word rows in TAGNT,
+// covering common words like Δαυείδ/David, Μωϋσῆς/Moses, Ναζαρέθ/Nazareth).
+// An exact match against the full compound string silently misses every
+// occurrence tagged that way when a caller reasonably searches the bare
+// form - a real concordance false negative that looked like a clean empty
+// result (found in real usage: concord_phrase ["ὕδωρ","πνεῦμα"] against
+// John 3:5 came back empty because ὕδωρ's TAGNT lemma there is "ὕδωρ,
+// ὕδατος"). Rather than rewriting the source data (the compound form is
+// real lexical information worth keeping), match value against any single
+// component of a comma-joined lemma too - the LIKE patterns require the
+// exact ", " boundary on each side, so a partial substring (e.g. "ὕδα")
+// can never match.
+func matchClause(expr, value string) (string, []any) {
+	if expr != "w.lemma" {
+		return expr + " = ?", []any{value}
+	}
+	esc := likeEscaper.Replace(value)
+	clause := expr + ` = ? OR ` + expr + ` LIKE ? ESCAPE '\' OR ` + expr + ` LIKE ? ESCAPE '\' OR ` + expr + ` LIKE ? ESCAPE '\'`
+	return clause, []any{value, esc + ", %", "%, " + esc, "%, " + esc + ", %"}
+}
+
 // ConcordLemma returns every words row in corpus whose lemma, dStrong, or
 // surface form matches query - by selects the column explicitly ("lemma",
 // "dstrong", "surface"), or "" for the original auto-detect (dStrong shape,
@@ -216,15 +248,18 @@ func extendChain(db *sql.DB, anchor wordRow, tokens []string, sourceID int64, wi
 
 func nextTokenInVerse(db *sql.DB, after wordRow, lemma string, sourceID int64, window int) (wordRow, bool, error) {
 	maxWordNo := after.wordNo + 1 + window
-	row := db.QueryRow(`
+	clause, args := matchClause("w.lemma", lemma)
+	query := fmt.Sprintf(`
 		SELECT w.id, w.verse_id, v.book_id, v.chapter, v.verse, w.word_no,
 		       COALESCE(w.surface,''), COALESCE(w.lemma,''), COALESCE(w.dstrong,''),
 		       COALESCE(w.morph_code,''), w.attestation, w.editions, w.source_locator,
 		       COALESCE(w.translit,'')
 		FROM words w JOIN verses v ON v.id = w.verse_id
-		WHERE w.verse_id = ? AND w.lemma = ? AND w.source_id = ? AND w.word_no > ? AND w.word_no <= ?
-		ORDER BY w.word_no LIMIT 1`,
-		after.verseID, lemma, sourceID, after.wordNo, maxWordNo)
+		WHERE w.verse_id = ? AND (%s) AND w.source_id = ? AND w.word_no > ? AND w.word_no <= ?
+		ORDER BY w.word_no LIMIT 1`, clause)
+	queryArgs := append([]any{after.verseID}, args...)
+	queryArgs = append(queryArgs, sourceID, after.wordNo, maxWordNo)
+	row := db.QueryRow(query, queryArgs...)
 	w, err := scanWordRow(row)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -274,15 +309,16 @@ func wordsMatching(db *sql.DB, col, value string, sourceID int64) ([]wordRow, er
 	if err != nil {
 		return nil, err
 	}
+	clause, args := matchClause(expr, value)
 	query := fmt.Sprintf(`
 		SELECT w.id, w.verse_id, v.book_id, v.chapter, v.verse, w.word_no,
 		       COALESCE(w.surface,''), COALESCE(w.lemma,''), COALESCE(w.dstrong,''),
 		       COALESCE(w.morph_code,''), w.attestation, w.editions, w.source_locator,
 		       COALESCE(w.translit,'')
 		FROM words w JOIN verses v ON v.id = w.verse_id
-		WHERE %s = ? AND w.source_id = ?
-		ORDER BY v.chapter, v.verse, w.word_no`, expr)
-	rows, err := db.Query(query, value, sourceID)
+		WHERE (%s) AND w.source_id = ?
+		ORDER BY v.chapter, v.verse, w.word_no`, clause)
+	rows, err := db.Query(query, append(args, sourceID)...)
 	if err != nil {
 		return nil, fmt.Errorf("wordsMatching: %w", err)
 	}
@@ -304,8 +340,9 @@ func countMatches(db *sql.DB, col, value string, sourceID int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	clause, args := matchClause(expr, value)
 	var n int
-	err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM words w WHERE %s = ? AND w.source_id = ?`, expr), value, sourceID).Scan(&n)
+	err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM words w WHERE (%s) AND w.source_id = ?`, clause), append(args, sourceID)...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("countMatches: %w", err)
 	}
@@ -317,13 +354,14 @@ func countMatchesByBook(db *sql.DB, col, value string, sourceID int64) (map[stri
 	if err != nil {
 		return nil, err
 	}
+	clause, args := matchClause(expr, value)
 	query := fmt.Sprintf(`
 		SELECT b.code, COUNT(*) FROM words w
 		JOIN verses v ON v.id = w.verse_id
 		JOIN books b ON b.id = v.book_id
-		WHERE %s = ? AND w.source_id = ?
-		GROUP BY b.code`, expr)
-	rows, err := db.Query(query, value, sourceID)
+		WHERE (%s) AND w.source_id = ?
+		GROUP BY b.code`, clause)
+	rows, err := db.Query(query, append(args, sourceID)...)
 	if err != nil {
 		return nil, fmt.Errorf("countMatchesByBook: %w", err)
 	}

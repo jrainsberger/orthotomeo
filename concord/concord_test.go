@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jrainsberger/orthotomeo/books"
@@ -436,6 +437,106 @@ func TestConcordMatchesMiddleElementOfThreeWayCompoundLemma(t *testing.T) {
 	}
 }
 
+// TestConcordLemmaMatchesCaseInsensitively is the direct regression test
+// for the second real friction point reported in use: querying the
+// lowercase form of a proper noun (case only - not accents, a separate
+// concern) returned 0 results even though the corpus carries 988 real
+// occurrences of the correctly-capitalized Ἰησοῦς - because ancient
+// manuscripts had no letter-case distinction at all, capitalizing proper
+// nouns in a printed citation form is a modern editorial convention, not
+// something the text itself distinguishes, so case-insensitive matching is
+// the textually faithful default now.
+func TestConcordLemmaMatchesCaseInsensitively(t *testing.T) {
+	db := setup(t)
+	lukBook := bookID(t, db, "LUK")
+	v := insertVerse(t, db, "canonical", lukBook, 99, 3)
+	insertWord(t, db, v, "TAGNT", 1, "Ἰησοῦς", "Ἰησοῦς", "G2424", "N-NSM-P")
+
+	cs, err := concord.ConcordLemma(db, "ἰησοῦς", "TAGNT", "lemma")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 1 || cs[0].Lemma != "Ἰησοῦς" {
+		t.Errorf("citations = %+v, want 1 row matching the real stored capitalized form", cs)
+	}
+}
+
+// TestConcordLemmaFlagsNameTypeCaveat covers the disambiguation the user
+// explicitly asked for: case-insensitive matching is the right default,
+// but a lemma tagged with STEPBible's "Name type=" morphology marker (a
+// proper noun) gets an automatic caveat, since case is exactly the thing
+// that (in a modern printed edition, not the manuscripts) distinguishes a
+// name from an identically-spelled common noun.
+func TestConcordLemmaFlagsNameTypeCaveat(t *testing.T) {
+	db := setup(t)
+	if _, err := db.Exec(`INSERT INTO morph_codes (code, language, description) VALUES ('N-NSM-P', 'grc', 'Function=Noun; Case=Nominative; Number=Singular; Gender=Masculine; Name type=Individual')`); err != nil {
+		t.Fatalf("seed morph_codes: %v", err)
+	}
+	lukBook := bookID(t, db, "LUK")
+	v := insertVerse(t, db, "canonical", lukBook, 99, 4)
+	insertWord(t, db, v, "TAGNT", 1, "Ἰησοῦς", "Ἰησοῦς", "G2424", "N-NSM-P")
+
+	cs, err := concord.ConcordLemma(db, "ἰησοῦς", "TAGNT", "lemma")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1", len(cs))
+	}
+	if !strings.Contains(cs[0].Caveat, "(Individual)") {
+		t.Errorf("caveat = %q, want it to name the proper-name tag", cs[0].Caveat)
+	}
+}
+
+// TestConcordLemmaCaseInsensitiveUnionFlagsOnlyTheNameRow covers the real
+// ambiguity case: Στέφανος ("Stephen", a person) and στέφανος ("crown", a
+// common noun) are spelled identically apart from case. A case-insensitive
+// query for either must return BOTH real words (their union, not a guess
+// at which one was meant) - but only the name-tagged row gets the caveat,
+// since the common noun reading isn't itself ambiguous or mistagged.
+func TestConcordLemmaCaseInsensitiveUnionFlagsOnlyTheNameRow(t *testing.T) {
+	db := setup(t)
+	if _, err := db.Exec(`INSERT INTO morph_codes (code, language, description) VALUES ('N-NSM-P', 'grc', 'Function=Noun; Case=Nominative; Number=Singular; Gender=Masculine; Name type=Individual')`); err != nil {
+		t.Fatalf("seed morph_codes: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO morph_codes (code, language, description) VALUES ('N-NSM', 'grc', 'Function=Noun; Case=Nominative; Number=Singular; Gender=Masculine')`); err != nil {
+		t.Fatalf("seed morph_codes: %v", err)
+	}
+	lukBook := bookID(t, db, "LUK")
+	v := insertVerse(t, db, "canonical", lukBook, 99, 5)
+	insertWord(t, db, v, "TAGNT", 1, "Στέφανος", "Στέφανος", "G4736A", "N-NSM-P")
+	insertWord(t, db, v, "TAGNT", 2, "στέφανος", "στέφανος", "G4735", "N-NSM")
+
+	cs, err := concord.ConcordLemma(db, "ΣΤΈΦΑΝΟΣ", "TAGNT", "lemma")
+	if err != nil {
+		t.Fatalf("concord: %v", err)
+	}
+	if len(cs) != 2 {
+		t.Fatalf("citations = %d, want 2 (both Στέφανος and στέφανος)", len(cs))
+	}
+	var nameCaveats, crownCaveats int
+	for _, c := range cs {
+		switch c.Lemma {
+		case "Στέφανος":
+			if strings.Contains(c.Caveat, "(Individual)") {
+				nameCaveats++
+			}
+		case "στέφανος":
+			if c.Caveat == "" {
+				crownCaveats++
+			} else {
+				t.Errorf("στέφανος (crown) citation unexpectedly caveated: %q", c.Caveat)
+			}
+		}
+	}
+	if nameCaveats != 1 {
+		t.Errorf("Στέφανος citation missing its Name-type caveat")
+	}
+	if crownCaveats != 1 {
+		t.Errorf("στέφανος (crown) citation should have no caveat")
+	}
+}
+
 // oxiaBaptizo/tonosBaptizo are the two Unicode forms of the same word
 // (baptizo): oxiaBaptizo uses the Greek Extended "oxia" accent (U+1F77) -
 // the raw form STEPBible's TAGNT source files actually use before
@@ -482,18 +583,20 @@ func TestConcordLemmaBySurfaceMatchesExactInflectedForm(t *testing.T) {
 }
 
 // TestConcordLemmaByExplicitLemmaDoesNotMatchSurfaceText confirms an
-// explicit by="lemma" restricts the search to the lemma column only - the
-// same surface-vs-lemma string ("Βίβλος" vs "βίβλος") must NOT match when
-// the caller explicitly asked for lemma, proving by isn't a hint that also
-// widens the search, it's a hard column selector.
+// explicit by="lemma" restricts the search to the lemma column only -
+// Mat.26.28's inflected surface "ἄφεσιν" (accusative) must NOT match when
+// the caller explicitly asked for lemma (the lemma column there is the
+// citation form "ἄφεσις", a genuinely different string, not just a case
+// variant), proving by isn't a hint that also widens the search, it's a
+// hard column selector.
 func TestConcordLemmaByExplicitLemmaDoesNotMatchSurfaceText(t *testing.T) {
 	db := setup(t)
-	cs, err := concord.ConcordLemma(db, "Βίβλος", "TAGNT", "lemma")
+	cs, err := concord.ConcordLemma(db, "ἄφεσιν", "TAGNT", "lemma")
 	if err != nil {
 		t.Fatalf("concord: %v", err)
 	}
 	if len(cs) != 0 {
-		t.Errorf("citations = %d, want 0 - by=\"lemma\" must not match the capitalized surface form", len(cs))
+		t.Errorf("citations = %d, want 0 - by=\"lemma\" must not match the inflected surface form", len(cs))
 	}
 }
 

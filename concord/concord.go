@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/jrainsberger/orthotomeo/lexnorm"
+	"github.com/jrainsberger/orthotomeo/morph"
 	"github.com/jrainsberger/orthotomeo/retriever"
 )
 
@@ -66,30 +67,124 @@ func columnExpr(col string) (string, error) {
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // matchClause builds the WHERE fragment (with placeholders) and its bind
-// args for matching expr against value. For every column except lemma this
-// is plain equality. w.lemma needs more: STEPBible's TAGNT source gives
-// some irregular nouns a compound citation form - both nominative and
-// genitive joined by ", " (e.g. "ὕδωρ, ὕδατος" for ὕδωρ, since its genitive
-// stem isn't predictable from the nominative) - stored verbatim as one
-// lemma string (51 distinct compound forms / 3306 word rows in TAGNT,
-// covering common words like Δαυείδ/David, Μωϋσῆς/Moses, Ναζαρέθ/Nazareth).
-// An exact match against the full compound string silently misses every
-// occurrence tagged that way when a caller reasonably searches the bare
-// form - a real concordance false negative that looked like a clean empty
-// result (found in real usage: concord_phrase ["ὕδωρ","πνεῦμα"] against
-// John 3:5 came back empty because ὕδωρ's TAGNT lemma there is "ὕδωρ,
-// ὕδατος"). Rather than rewriting the source data (the compound form is
-// real lexical information worth keeping), match value against any single
-// component of a comma-joined lemma too - the LIKE patterns require the
-// exact ", " boundary on each side, so a partial substring (e.g. "ὕδα")
-// can never match.
-func matchClause(expr, value string) (string, []any) {
+// args for matching expr against every string in values, OR'd together.
+// For every column except lemma, values is always the caller's single
+// query term. w.lemma needs more, in two independent ways:
+//
+//  1. STEPBible's TAGNT source gives some irregular nouns a compound
+//     citation form - both nominative and genitive joined by ", " (e.g.
+//     "ὕδωρ, ὕδατος" for ὕδωρ, since its genitive stem isn't predictable
+//     from the nominative) - stored verbatim as one lemma string (51
+//     distinct compound forms / 3306 word rows in TAGNT, covering common
+//     words like Δαυείδ/David, Μωϋσῆς/Moses, Ναζαρέθ/Nazareth). An exact
+//     match against the full compound string silently misses every
+//     occurrence tagged that way (found in real usage: concord_phrase
+//     ["ὕδωρ","πνεῦμα"] against John 3:5 came back empty). Rather than
+//     rewriting the source data (the compound form is real lexical
+//     information worth keeping), each value here is matched against any
+//     single component of a comma-joined lemma too - the LIKE patterns
+//     require the exact ", " boundary on each side, so a partial
+//     substring (e.g. "ὕδα") can never match.
+//  2. resolveLemmaVariants (see its own doc comment) may resolve one
+//     query into several real stored lemma strings - e.g. a case-
+//     insensitive query for a word that's also a proper name spelled
+//     identically differing only by case. matchClause ORs a clause for
+//     each resolved value, so the result is their union.
+func matchClause(expr string, values []string) (string, []any) {
 	if expr != "w.lemma" {
-		return expr + " = ?", []any{value}
+		return expr + " = ?", []any{values[0]}
 	}
-	esc := likeEscaper.Replace(value)
-	clause := expr + ` = ? OR ` + expr + ` LIKE ? ESCAPE '\' OR ` + expr + ` LIKE ? ESCAPE '\' OR ` + expr + ` LIKE ? ESCAPE '\'`
-	return clause, []any{value, esc + ", %", "%, " + esc, "%, " + esc + ", %"}
+	clauses := make([]string, len(values))
+	var args []any
+	for i, value := range values {
+		esc := likeEscaper.Replace(value)
+		clauses[i] = expr + ` = ? OR ` + expr + ` LIKE ? ESCAPE '\' OR ` + expr + ` LIKE ? ESCAPE '\' OR ` + expr + ` LIKE ? ESCAPE '\'`
+		args = append(args, value, esc+", %", "%, "+esc, "%, "+esc+", %")
+	}
+	return "(" + strings.Join(clauses, ") OR (") + ")", args
+}
+
+// resolveLemmaVariants turns a lemma query into every distinct stored
+// words.lemma value in sourceID that names the same word - case-
+// insensitively, and matching a single component of a compound citation
+// form (see matchClause). Case-insensitive because ancient manuscripts
+// carried no letter-case distinction at all: capitalizing proper nouns is
+// a modern editorial convention layered onto printed critical texts, not
+// something recoverable from the text itself, so folding it is the
+// textually faithful default here, not a loosened rule. Returns [query]
+// unchanged for every other column (dstrong/surface never take this
+// compound-or-case shape), and unchanged when nothing case-insensitively
+// matches (preserving today's zero-result behavior for a genuinely absent
+// lemma, rather than inventing a match).
+func resolveLemmaVariants(db *sql.DB, col, query string, sourceID int64) ([]string, error) {
+	if col != "lemma" {
+		return []string{query}, nil
+	}
+	rows, err := db.Query(`SELECT DISTINCT lemma FROM words WHERE source_id = ? AND lemma IS NOT NULL AND lemma != ''`, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("resolveLemmaVariants: %w", err)
+	}
+	defer rows.Close()
+
+	var variants []string
+	for rows.Next() {
+		var stored string
+		if err := rows.Scan(&stored); err != nil {
+			return nil, fmt.Errorf("resolveLemmaVariants scan: %w", err)
+		}
+		for _, part := range strings.Split(stored, ", ") {
+			if strings.EqualFold(part, query) {
+				variants = append(variants, stored)
+				break
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(variants) == 0 {
+		return []string{query}, nil
+	}
+	return variants, nil
+}
+
+// nameTypeCaveat returns a caveat note when morphCode (a word's own
+// morphology tag) expands to a description carrying STEPBible's "Name
+// type=" marker (a proper noun - person, location, title, etc). Ancient
+// manuscripts had no letter-case distinction at all, so a case-insensitive
+// lemma match can genuinely span both a common noun and a name spelled
+// identically (e.g. Στέφανος "Stephen" / στέφανος "crown") - this surfaces
+// that rather than letting the two senses mix silently. An unresolvable or
+// absent morph code (LXX corpora never carry one) just means no note, not
+// an error: this is an enrichment on top of a correct result, not a
+// correctness-critical lookup.
+func nameTypeCaveat(db *sql.DB, morphCode string) string {
+	if morphCode == "" {
+		return ""
+	}
+	desc, err := morph.Expand(db, morphCode)
+	if err != nil {
+		return ""
+	}
+	const marker = "Name type="
+	idx := strings.Index(desc, marker)
+	if idx == -1 {
+		return ""
+	}
+	return fmt.Sprintf("lemma is tagged as a proper name (%s) - case is a modern editorial convention here, not something the manuscripts themselves distinguish", desc[idx+len(marker):])
+}
+
+// appendCaveat joins a new note onto an existing caveat (if any), so
+// multiple independent notes (a T4b alignment caveat, a name-type note)
+// compose instead of one silently overwriting the other.
+func appendCaveat(existing, note string) string {
+	if note == "" {
+		return existing
+	}
+	if existing == "" {
+		return note
+	}
+	return existing + "; " + note
 }
 
 // ConcordLemma returns every words row in corpus whose lemma, dStrong, or
@@ -127,7 +222,7 @@ func ConcordLemma(db *sql.DB, query, corpus, by string) ([]retriever.Citation, e
 			Locator: w.sourceLocator,
 			Lemma:   w.lemma, Translit: w.translit, DStrong: w.dstrong, Grammar: w.morphCode,
 			Attestation: w.attestation, Manuscripts: w.editions,
-			Confidence: confidence, Caveat: caveat,
+			Confidence: confidence, Caveat: appendCaveat(caveat, nameTypeCaveat(db, w.morphCode)),
 		})
 	}
 	return cites, nil
@@ -212,6 +307,7 @@ func ConcordPhrase(db *sql.DB, tokens []string, corpus string, window int) ([]re
 		parts := make([]string, len(chain))
 		for i, w := range chain {
 			parts[i] = displayText(w)
+			caveat = appendCaveat(caveat, nameTypeCaveat(db, w.morphCode))
 		}
 		cites = append(cites, retriever.Citation{
 			Ref: ref, Edition: corpus, Text: strings.Join(parts, " "),
@@ -248,7 +344,11 @@ func extendChain(db *sql.DB, anchor wordRow, tokens []string, sourceID int64, wi
 
 func nextTokenInVerse(db *sql.DB, after wordRow, lemma string, sourceID int64, window int) (wordRow, bool, error) {
 	maxWordNo := after.wordNo + 1 + window
-	clause, args := matchClause("w.lemma", lemma)
+	variants, err := resolveLemmaVariants(db, "lemma", lemma, sourceID)
+	if err != nil {
+		return wordRow{}, false, err
+	}
+	clause, args := matchClause("w.lemma", variants)
 	query := fmt.Sprintf(`
 		SELECT w.id, w.verse_id, v.book_id, v.chapter, v.verse, w.word_no,
 		       COALESCE(w.surface,''), COALESCE(w.lemma,''), COALESCE(w.dstrong,''),
@@ -309,7 +409,11 @@ func wordsMatching(db *sql.DB, col, value string, sourceID int64) ([]wordRow, er
 	if err != nil {
 		return nil, err
 	}
-	clause, args := matchClause(expr, value)
+	variants, err := resolveLemmaVariants(db, col, value, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	clause, args := matchClause(expr, variants)
 	query := fmt.Sprintf(`
 		SELECT w.id, w.verse_id, v.book_id, v.chapter, v.verse, w.word_no,
 		       COALESCE(w.surface,''), COALESCE(w.lemma,''), COALESCE(w.dstrong,''),
@@ -340,7 +444,11 @@ func countMatches(db *sql.DB, col, value string, sourceID int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	clause, args := matchClause(expr, value)
+	variants, err := resolveLemmaVariants(db, col, value, sourceID)
+	if err != nil {
+		return 0, err
+	}
+	clause, args := matchClause(expr, variants)
 	var n int
 	err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM words w WHERE (%s) AND w.source_id = ?`, clause), append(args, sourceID)...).Scan(&n)
 	if err != nil {
@@ -354,7 +462,11 @@ func countMatchesByBook(db *sql.DB, col, value string, sourceID int64) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	clause, args := matchClause(expr, value)
+	variants, err := resolveLemmaVariants(db, col, value, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	clause, args := matchClause(expr, variants)
 	query := fmt.Sprintf(`
 		SELECT b.code, COUNT(*) FROM words w
 		JOIN verses v ON v.id = w.verse_id

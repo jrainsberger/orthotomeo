@@ -2424,6 +2424,64 @@ with the same certainty as a real LXX-mediated or cross-reference-mediated link.
 
 ---
 
+### Post-T36 fixes (2026-07-05): review pass, schema-drift guard, concordance false negative
+
+A broad self-review (schema-drift risk, book-resolution edge cases, web UI
+completeness, project health) plus one piece of real usage feedback produced
+five fixes, each committed separately:
+
+1. **Schema-version guard.** Hit twice in one session: `CREATE TABLE IF NOT
+   EXISTS` never retrofits an existing table, so a DB built before
+   `schema.sql` gained a column (`words.translit`, then
+   `sources.homepage_url`) opened fine and only failed deep inside a query
+   with `no such column`. `store.ApplySchema` now stamps `PRAGMA
+   user_version` with a `store.SchemaVersion` constant (bumped whenever
+   `schema.sql` changes); `engine.Open` checks it and fails fast with an
+   actionable "delete it and rebuild" error instead.
+2. **MCP book-name resolution.** The earlier LUK/Luke case-insensitivity fix
+   deliberately left `cmd/orthotomeo-mcp`'s `ref()` helper alone, on the
+   assumption the schema's "canonical USFM book code" wording would keep an
+   LLM client in line - nothing enforces that. `ref()` now resolves through
+   `Engine.ResolveBookCode` like every other transport; schema doc comments
+   updated to state both accepted forms.
+3. **Print-CSS gap.** `.status-row`/`#backLink` weren't in `@media print`'s
+   hidden-elements list, so a printed page could show loading/error text and
+   the "‹ back" link. One-line fix.
+4. **README drift.** MCP tools list said "ten," missing `interlinear` and
+   `lexicon_lookup` (real count: twelve); no HTTP API or desktop-app section
+   existed despite both being real, tested transports; CLI/library examples
+   were stale. Brought current.
+5. **Concordance false negative (real usage report, the significant one).**
+   `concord_phrase ["ὕδωρ","πνεῦμα"]` against TAGNT came back empty even
+   though John 3:5 plainly has both, in order, in range. Root cause:
+   STEPBible's TAGNT source gives some irregular nouns a compound citation
+   form - nominative and genitive joined by ", " (`"ὕδωρ, ὕδατος"`, since
+   ὕδωρ's genitive stem isn't predictable from its nominative) - stored
+   verbatim as one `words.lemma` string. Every match site (`ConcordLemma`,
+   `Count`, `ConcordPhrase`'s anchor and chain-extension steps) did exact
+   string equality against the whole column, so a bare-form query silently
+   missed every compound-tagged occurrence. Not a one-off: 51 distinct
+   compound lemma strings / 3306 word rows in TAGNT alone, covering common
+   words (Δαυείδ/David, Μωϋσῆς/Moses, Ναζαρέθ/Nazareth, τρεῖς/"three"). This
+   is exactly invariant #3's failure mode in the wrong direction: it failed
+   to find rather than failing loudly, indistinguishable from a real empty
+   result unless a caller cross-checked. Fixed in the matching predicate
+   (`concord.matchClause`), not the loader - rewriting the stored lemma would
+   lose real lexical information (the compound form documents the actual
+   citation-form convention). `matchClause` now matches a query against any
+   single `", "`-delimited component of a `lemma` column too (`dstrong`/
+   `surface` untouched, they never take this shape); the LIKE patterns
+   require the exact `", "` boundary on each side, so a partial substring
+   (e.g. `"ὕδα"`) can never false-positive match, and wildcard characters in
+   the query are escaped defensively. Validated against the real corpus DB
+   (read-only): the phrase query now finds John 3:5, plus Acts 8:39 - a
+   second real match equally invisible before.
+
+All five: full suite green, `orthotomeo-desktop.exe` rebuilt where static
+assets changed.
+
+---
+
 ## Dependency summary
 
 ```

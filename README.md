@@ -36,6 +36,41 @@ original-language text it didn't get from its own database. Given a query, it
 either returns the complete, provenance-tagged result set, or it raises an
 error - it does not silently truncate, guess, or paraphrase.
 
+## Design principles
+
+- **The content itself is never curated by an LLM.** Every word, verse, and
+  lemma a caller receives comes straight from the checked-in corpus files
+  (STEPBible, Open Scriptures, public-domain translations) through a
+  deterministic SQL query - no model ever selects, summarizes, paraphrases,
+  or decides what's "relevant" before it reaches you. An LLM client can
+  reason *about* what the engine returns; it never touches what the engine
+  *is*. The one place an LLM's own judgment enters is display formatting it
+  builds on top (e.g. how it phrases an answer using the returned Citations)
+  - never the underlying text, and the tools exist precisely so that
+  judgment is checkable against the real data, not offered on its own
+  authority.
+- **Complete-or-fail, never a silent partial answer.** A concordance query
+  returns *every* matching occurrence or raises an error - it never
+  truncates, samples, or guesses at "close enough."
+- **Provenance always.** Every citation traces to a real row in a real
+  source file (edition, license, attribution, locator) - never a summary,
+  a paraphrase, or a claim from memory.
+- **Reconcile at read time, never assume 1:1 across editions.** The five
+  text traditions disagree on versification and canon; cross-edition
+  divergence is surfaced as data (a Caveat) at the moment it's found, never
+  hidden or silently forced onto one edition's numbering.
+- **Textually faithful defaults, not modern-convention defaults.** Where a
+  modern editorial convention doesn't reflect anything in the manuscripts
+  themselves (e.g. letter case, which ancient Greek/Hebrew manuscripts
+  didn't have at all), the engine doesn't treat it as load-bearing by
+  default - but flags it via a Caveat wherever the convention *does* carry
+  real disambiguating information (e.g. a proper name spelled identically
+  to a common noun apart from case).
+- **Read-only, and the database is disposable.** The engine never writes;
+  the derived SQLite database is a regenerable build artifact, never
+  checked in and never the source of truth - the corpus files are, and the
+  database can be deleted and rebuilt from them at any time.
+
 ## What's inside
 
 - A derived **SQLite database** built from the corpus (`cmd/build`) - a

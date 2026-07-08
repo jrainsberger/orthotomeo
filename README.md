@@ -202,6 +202,53 @@ endpoints directly: `/verse`, `/passage`, `/concord`, `/parse`, `/attest`,
 `/interlinear`, `/define`, `/books` (the canonical 66-book registry, used by
 the UI's book-field autocomplete).
 
+```sh
+curl "http://127.0.0.1:8420/verse?book=JHN&chapter=3&verse=16&editions=KJV"
+```
+```json
+{
+  "citations": [
+    {
+      "ref": {"book": "JHN", "chapter": 3, "verse": 16},
+      "edition": "KJV",
+      "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
+      "locator": "John 3:16",
+      "confidence": "High"
+    }
+  ],
+  "sources": {
+    "KJV": {"file": "bible-text/KJV/KJV.json", "license": "Public Domain", "homepage_url": "https://github.com/scrollmapper/bible_databases"}
+  }
+}
+```
+
+```sh
+curl "http://127.0.0.1:8420/concord?query=G0859&corpus=TAGNT"
+```
+```json
+{
+  "citations": [
+    {
+      "ref": {"book": "MAT", "chapter": 26, "verse": 28},
+      "edition": "TAGNT",
+      "text": "ἄφεσιν",
+      "locator": "Mat.26.28#16=NKO",
+      "lemma": "ἄφεσις",
+      "translit": "aphesin",
+      "dstrong": "G0859",
+      "grammar": "N-ASF",
+      "attestation": "NKO",
+      "manuscripts": "NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz",
+      "confidence": "High"
+    },
+    { "...": "16 more occurrences, one per real match - complete-or-fail, never a sample" }
+  ],
+  "sources": {
+    "TAGNT": {"file": "STEPBible-Data/Translators Amalgamated OT+NT/TAGNT*.txt", "license": "CC BY 4.0", "attribution": "STEPBible.org / Tyndale House Cambridge", "homepage_url": "https://github.com/STEPBible/STEPBible-Data"}
+  }
+}
+```
+
 ### As a desktop app
 
 ```sh

@@ -368,7 +368,11 @@ you'd give an LLM client with orthotomeo's MCP tools registered:
 > remembered sample - and let the unambiguous cases fix the ambiguous ones.
 > Work from what the tools return, not from recall; if a grammatical or lexical
 > claim isn't something you can point to in the returned citations, say so
-> rather than asserting it. Stay strictly with the biblical text itself - no
+> rather than asserting it. This includes when you derive a grammatical form
+> yourself - e.g. lemmatizing a surface-only edition like Swete, which carries
+> no lemma field, rather than reading one from a tool field: that's fine to
+> do, but say explicitly that you did it, distinct from citations the tool
+> verified directly. Stay strictly with the biblical text itself - no
 > commentaries, no modern theological arguments, no ancient/extra-biblical
 > sources unless I explicitly ask for those as a separate, clearly-marked
 > follow-up. Report manuscript attestation (via `attestation`) as neutral

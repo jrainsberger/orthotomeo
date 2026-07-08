@@ -376,6 +376,95 @@ you'd give an LLM client with orthotomeo's MCP tools registered:
 > to argue for or against. Give me a reference list with brief lexical notes I
 > can take into my own study, not a finished conclusion.
 
+## Worked example
+
+A real, captured exchange (not fabricated) - an LLM client with the above
+prompt and orthotomeo's MCP tools registered, asked about the project's own
+namesake word. Included because it demonstrates the "engine owns text, the
+LLM owns meaning" principle in practice, not just in description: every
+grammatical/attestation claim traces to a tool result, the model stops and
+asks before reaching into LXX or Hebrew data on its own, and it explicitly
+labels its own cross-corpus synthesis as inference rather than a tool-
+verified fact.
+
+> **Me:** Where does the Greek word ὀρθοτομέω occur in the New Testament,
+> and what does it mean in context?
+
+**Concordance result: ὀρθοτομέω (G3718)**
+
+The complete-or-fail concordance against TAGNT returns exactly one occurrence
+in the New Testament: **2 Timothy 2:15**.
+
+- Greek form: ὀρθοτομοῦντα - Present Active Participle, Accusative Singular
+  Masculine (V-PAP-ASM)
+- Manuscript attestation: NKO - attested across the full set carried in this
+  corpus (NA28, NA27, Tyndale House GNT, SBLGNT, WH, Tregelles, TR,
+  Byzantine). No variant flagged for this word.
+
+Full verse (TAGNT): *σπούδασον σεαυτὸν δόκιμον παραστῆσαι τῷ θεῷ, ἐργάτην
+ἀνεπαίσχυντον, ὀρθοτομοῦντα τὸν λόγον τῆς ἀληθείας.*
+
+- KJV: "...a workman that needeth not to be ashamed, **rightly dividing**
+  the word of truth."
+- ASV: "...**handling aright** the word of truth."
+- WEB: "...**properly handling** the Word of Truth."
+
+Because this is a NT *hapax legomenon* (single occurrence), the concordance
+method's core move - letting unambiguous instances fix an ambiguous one -
+has no other NT data to draw on within this corpus. I haven't searched the
+LXX for this lemma - say the word if you want that pulled as a separate,
+clearly marked follow-up, since it would be extra-NT.
+
+> **Me:** Yes, please search LXX also.
+
+**LXX concordance result: ὀρθοτομέω**
+
+Searching OSS-LXX-lemma returns two occurrences, both in Proverbs. The
+Swete surface-text corpus doesn't carry lemma tags at all (confirmed: every
+word is flagged "Swete is surface-only, T12"), so the lemma search against
+Swete correctly returns zero.
+
+- **Proverbs 3:6** - ὀρθοτομῇ (present subjunctive). Brenton: "...that she
+  may **rightly direct** thy paths." Object: τὰς ὁδούς σου ("your paths").
+- **Proverbs 11:5** - ὀρθοτομεῖ (present indicative). Brenton:
+  "Righteousness **traces out** blameless paths." Object: ὁδούς
+  ("paths"), qualified ἀμώμους ("blameless").
+
+Across all three attested occurrences, the verb's object is consistently a
+"path/way" noun in the LXX, but in 2 Timothy the object is τὸν λόγον τῆς
+ἀληθείας ("the word of truth") - not a path. That's a real semantic
+extension worth weighing: three data points across two authors/eras is not
+enough to fix the sense with certainty, and there's no fourth instance
+anywhere in the tagged corpora to anchor it further.
+
+> **Me:** Please xref with the Hebrew.
+
+**Hebrew cross-reference (TAHOT)**
+
+Both Proverbs verses translate the same underlying Hebrew verb - **יָשַׁר
+(yashar), Piel stem** (H3474) - not a "cutting" verb.
+
+- **Proverbs 3:6**: יְיַשֵּׁר (Piel imperfect 3ms) - "he will make
+  straight/level." Object: אֹרְחֹתֶיךָ ("your paths").
+- **Proverbs 11:5**: תְּיַשֵּׁר (Piel imperfect 3fs). Object: דַּרְכּוֹ
+  ("his way").
+
+This changes the picture: **the "cutting" sense is a Greek-translator
+choice, not inherited from the Hebrew.** יָשַׁר means "make straight/level/
+smooth" - the same root behind יָשָׁר ("upright, straight") - with no
+lexical component of cutting or incising. The LXX translators rendered a
+"straightening/leveling" verb with a Greek compound built on τέμνω ("cut");
+that's the translators' own image, layered onto the Hebrew rather than
+reproduced from it. For 2 Timothy 2:15, this means a gloss like "keep the
+word of truth on a straight/level course" is at least as defensible from
+this trail as "cut a straight path" - the Hebrew data doesn't support
+building an interpretation on the "cut" etymology alone.
+
+*(This is as far as the concordance data takes it - three Greek instances,
+two underlying Hebrew instances, no fourth anywhere in the tagged corpora.
+The synthesis above is inference from the pattern, explicitly distinguished
+throughout the actual exchange from what a citation states outright.)*
+
 ## License
 
 Code: MIT (LICENSE file pending). Data is **not** relicensed by this

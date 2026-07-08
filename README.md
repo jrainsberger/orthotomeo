@@ -10,17 +10,8 @@ public-domain English translations) into a derived SQLite database, then serves
 verbatim, provenance-tagged lookups and complete-or-fail concordance over it -
 through an MCP server, a CLI, or as a Go library.
 
-Paired with an LLM, this stops being a reference you flip through by hand: you
-ask a follow-up in plain language ("also check the LXX," "cross-reference the
-Hebrew root"), and the model fans that out into the right tool calls, then
-finds patterns across dozens of citations at once - the iterative
-cross-referencing a printed concordance leaves entirely to you. The engine
-still owns the text; the LLM adds conversational follow-through and synthesis
-on top of it, never in place of it.
-
-*An independent personal project, built and maintained by
-[Justin Rainsberger](https://github.com/jrainsberger). Not affiliated with, 
-sponsored by, or representing any employer.*
+*A personal project by [Justin Rainsberger](https://github.com/jrainsberger) -
+not affiliated with, sponsored by, or representing any employer.*
 
 ## Why it's built this way
 
@@ -102,7 +93,17 @@ See [docs/PLAN.md](docs/PLAN.md) for the full design (read its cross-cutting
 invariants first) and [docs/erd-v1.svg](docs/erd-v1.svg) for the data model.
 [docs/STATUS.md](docs/STATUS.md) has the detailed ticket-by-ticket build log.
 
-## The corpus
+Paired with an LLM, this small local reference engine stops being something
+you flip through by hand: ask a follow-up in plain language, and the model
+fans that into the right tool calls and finds patterns across the results -
+the cross-referencing a printed concordance leaves entirely to you. The
+engine still owns the text; the LLM adds the conversational follow-through,
+never the text itself. See the [worked example](#worked-example) below.
+
+## Setting up the corpus
+
+*(Evaluating the project rather than installing it? Skip ahead to the
+[worked example](#worked-example) and come back to this later.)*
 
 **This repo does not ship the corpus.** The source files are external inputs
 you supply yourself - each is separately licensed, and `cmd/build` refuses to
@@ -369,44 +370,21 @@ citations, err := e.ConcordLemma("G0859", "TAGNT", "") // by: "" (auto-detect), 
 fmt.Println(e.Cite(citations)) // Markdown-formatted, fully cited
 ```
 
-## Example prompt
-
-A sample of the discipline this engine is built to serve - the kind of prompt
-you'd give an LLM client with orthotomeo's MCP tools registered:
-
-> You have access to the orthotomeo MCP tools over a real biblical-text corpus.
-> When I ask a scripture question, answer using the concordance method: pull
-> **every** relevant occurrence via `concord_lemma`/`concord_phrase` - not a
-> remembered sample - and let the unambiguous cases fix the ambiguous ones.
-> Work from what the tools return, not from recall; if a grammatical or lexical
-> claim isn't something you can point to in the returned citations, say so
-> rather than asserting it. This includes when you derive a grammatical form
-> yourself - e.g. lemmatizing a surface-only edition like Swete, which carries
-> no lemma field, rather than reading one from a tool field: that's fine to
-> do, but say explicitly that you did it, distinct from citations the tool
-> verified directly. Stay strictly with the biblical text itself - no
-> commentaries, no modern theological arguments, no ancient/extra-biblical
-> sources unless I explicitly ask for those as a separate, clearly-marked
-> follow-up. Report manuscript attestation (via `attestation`) as neutral
-> data - a textual variant is something for me to weigh, not something for you
-> to argue for or against. Give me a reference list with brief lexical notes I
-> can take into my own study, not a finished conclusion.
-
 ## Worked example
 
-A real, captured exchange (not fabricated) - an LLM client with the above
-prompt and orthotomeo's MCP tools registered, asked about the project's own
-namesake word. Included because it demonstrates the "engine owns text, the
-LLM owns meaning" principle in practice, not just in description: every
-grammatical/attestation claim traces to a tool result, the model stops and
-asks before reaching into LXX or Hebrew data on its own, and it explicitly
-labels its own cross-corpus synthesis as inference rather than a tool-
-verified fact.
+A real, captured exchange (not fabricated) - an LLM client with the system
+prompt shown below (and orthotomeo's MCP tools) registered, asked about the
+project's own namesake word. Included because it demonstrates the "engine
+owns text, the LLM owns meaning" principle in practice, not just in
+description: every grammatical/attestation claim traces to a tool result,
+the model stops and asks before reaching into LXX or Hebrew data on its own,
+and it explicitly labels its own cross-corpus synthesis as inference rather
+than a tool-verified fact.
 
-> **Me:** Where does the Greek word ὀρθοτομέω occur in the New Testament,
+> **Me:** Where does the Greek word *ὀρθοτομέω* occur in the New Testament,
 > and what does it mean in context?
 
-**Concordance result: ὀρθοτομέω (G3718)**
+**Concordance result: *ὀρθοτομέω* (G3718)**
 
 The complete-or-fail concordance against TAGNT returns exactly one occurrence
 in the New Testament: **2 Timothy 2:15**.
@@ -433,7 +411,7 @@ clearly marked follow-up, since it would be extra-NT.
 
 > **Me:** Yes, please search LXX also.
 
-**LXX concordance result: ὀρθοτομέω**
+**LXX concordance result: *ὀρθοτομέω***
 
 Searching OSS-LXX-lemma returns two occurrences, both in Proverbs. The
 Swete surface-text corpus doesn't carry lemma tags at all (confirmed: every
@@ -480,6 +458,29 @@ building an interpretation on the "cut" etymology alone.
 two underlying Hebrew instances, no fourth anywhere in the tagged corpora.
 The synthesis above is inference from the pattern, explicitly distinguished
 throughout the actual exchange from what a citation states outright.)*
+
+## Example prompt
+
+The system prompt that produced the exchange above - the kind you'd give an
+LLM client with orthotomeo's MCP tools registered:
+
+> You have access to the orthotomeo MCP tools over a real biblical-text corpus.
+> When I ask a scripture question, answer using the concordance method: pull
+> **every** relevant occurrence via `concord_lemma`/`concord_phrase` - not a
+> remembered sample - and let the unambiguous cases fix the ambiguous ones.
+> Work from what the tools return, not from recall; if a grammatical or lexical
+> claim isn't something you can point to in the returned citations, say so
+> rather than asserting it. This includes when you derive a grammatical form
+> yourself - e.g. lemmatizing a surface-only edition like Swete, which carries
+> no lemma field, rather than reading one from a tool field: that's fine to
+> do, but say explicitly that you did it, distinct from citations the tool
+> verified directly. Stay strictly with the biblical text itself - no
+> commentaries, no modern theological arguments, no ancient/extra-biblical
+> sources unless I explicitly ask for those as a separate, clearly-marked
+> follow-up. Report manuscript attestation (via `attestation`) as neutral
+> data - a textual variant is something for me to weigh, not something for you
+> to argue for or against. Give me a reference list with brief lexical notes I
+> can take into my own study, not a finished conclusion.
 
 ## License
 

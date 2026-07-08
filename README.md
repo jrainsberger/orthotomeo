@@ -217,6 +217,10 @@ go run ./cmd/build --corpus <path-to-bible-text-root> --reference <path-to-STEPB
 go test ./...   # all green
 ```
 
+Or via the [Makefile](Makefile): `make build-db CORPUS=<path> REFERENCE=<path>`,
+`make build` (all four transport binaries), `make lint` (fmt-check + vet +
+test, the same checks this project's own sessions run before every commit).
+
 `--verify` runs the completeness self-test (invariant #3 made enforceable) -
 source/FK integrity, full-canon book coverage, and known per-edition word
 counts, each checked against the real build. The DB is regenerable: delete it
@@ -273,6 +277,12 @@ English name, in any case.
 go build -o orthotomeo-web ./cmd/orthotomeo-web
 ./orthotomeo-web --db data/orthotomeo.db   # loopback only, default port 8420
 ```
+
+Or via the [Dockerfile](Dockerfile) (`make docker-build && make docker-run
+DB=data/orthotomeo.db`, or plain `docker build`/`docker run`) - it builds
+only `cmd/orthotomeo-web` into a minimal, cgo-free image; the DB is never
+baked in, it's mounted at `/data/orthotomeo.db` (build it on the host
+first, per "Building the database" above).
 
 Open `http://127.0.0.1:8420/` for the web UI, or hit the GET-only JSON
 endpoints directly: `/verse`, `/passage`, `/concord`, `/parse`, `/attest`,

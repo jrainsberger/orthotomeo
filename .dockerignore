@@ -1,0 +1,15 @@
+.git
+data/
+*.db
+*.db-shm
+*.db-wal
+orthotomeo
+orthotomeo.exe
+orthotomeo-mcp
+orthotomeo-mcp.exe
+orthotomeo-web.exe
+orthotomeo-desktop
+orthotomeo-desktop.exe
+design/
+docs/
+*.test

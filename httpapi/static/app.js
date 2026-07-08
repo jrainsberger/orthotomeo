@@ -1,5 +1,16 @@
 // orthotomeo web UI - plain fetch + DOM, no framework (T27 decision).
 
+// Must match the #corpus <select>'s <option> values in index.html exactly -
+// these are the only corpora /interlinear and /concord accept
+// (retriever.IsWordCorpus server-side). KJV/ASV/WEB/Brenton are verse-text
+// editions, not word-tagged corpora, and a Citation from /verse or /passage
+// carries one of those as its `edition` - refCell must not build an
+// interlinear cross-link from one (found in real use: clicking a KJV
+// citation's ref set the corpus <select> to "KJV", an option that doesn't
+// exist, leaving it unselected and blank - the request then failed with
+// "missing required query param \"corpus\"").
+const WORD_CORPORA = new Set(["TAGNT", "TAHOT", "Swete", "OSS-LXX-lemma"]);
+
 const MODES = {
   verse: {
     endpoint: "/verse",
@@ -274,7 +285,7 @@ function origCell(text, translit) {
 
 function refCell(ref, corpus) {
   const text = `${ref.book}.${ref.chapter}.${ref.verse}`;
-  if (!corpus) return el("td", { text });
+  if (!corpus || !WORD_CORPORA.has(corpus)) return el("td", { text });
   return el("td", {}, [
     xlink(text, () => crossLinkTo("interlinear", { book: ref.book, chapter: String(ref.chapter), verse: String(ref.verse), corpus })),
   ]);

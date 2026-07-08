@@ -176,6 +176,49 @@ func TestE2EVerseSearchReadsMultiSelectEditions(t *testing.T) {
 	}
 }
 
+// TestE2EVerseRefCellIsPlainTextNotACrossLink is the direct regression test
+// for a real bug found in use: a /verse citation's edition is a verse-text
+// edition (KJV/ASV/WEB/Brenton), never one of the four word-tagged corpora
+// /interlinear accepts. refCell used to build an interlinear cross-link
+// from ANY truthy corpus/edition, so clicking a KJV ref set the corpus
+// <select> to "KJV" - an option that doesn't exist - leaving it blank and
+// making the follow-up request fail with `missing required query param
+// "corpus"`. The ref cell must render as plain text for a non-word-corpus
+// edition instead of a broken link.
+func TestE2EVerseRefCellIsPlainTextNotACrossLink(t *testing.T) {
+	e, err := engine.Open(buildFixture(t))
+	if err != nil {
+		t.Fatalf("engine.Open: %v", err)
+	}
+	defer e.Close()
+	ts := httptest.NewServer(httpapi.New(e).Handler())
+	defer ts.Close()
+
+	runCtx, cancel := context.WithTimeout(newE2EContext(t), 20*time.Second)
+	defer cancel()
+
+	var xlinkCount int
+	var refText string
+	err = chromedp.Run(runCtx,
+		chromedp.Navigate(ts.URL+"/"),
+		chromedp.WaitVisible(`#search`, chromedp.ByID),
+		chromedp.SetValue(`input[name="book"]`, "MAT", chromedp.ByQuery),
+		chromedp.SetValue(`input[name="chapter"]`, "26", chromedp.ByQuery),
+		chromedp.SetValue(`input[name="verse"]`, "28", chromedp.ByQuery),
+		chromedp.Click(`#search button[type="submit"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#results table`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll('#results tbody tr td:nth-child(2) a.xlink').length`, &xlinkCount),
+		chromedp.Text(`#results tbody tr td:nth-child(2)`, &refText, chromedp.ByQuery),
+	)
+	skipIfNoBrowser(t, err)
+	if xlinkCount != 0 {
+		t.Errorf("ref cell has %d cross-link(s), want 0 - a KJV verse-text citation has no valid interlinear corpus to link into", xlinkCount)
+	}
+	if !strings.Contains(refText, "MAT.26.28") {
+		t.Errorf("ref cell text = %q, want it to still show the plain ref", refText)
+	}
+}
+
 // TestE2EDStrongLinkNavigatesToDefine is the direct test for the flagged
 // UX gap: a dStrong cell in a parse/concord result must be a real,
 // clickable cross-link into define mode, landing on the full gloss +

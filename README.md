@@ -133,6 +133,52 @@ available from their respective publishers (eBible.org, Open Scriptures). None
 of these are fetched automatically yet - `sources/sources.json`'s `fetch_url`
 field is a placeholder for that, not yet built.
 
+## Reading attestation codes
+
+Every `parse`/`attestation`/interlinear result carries two fields worth
+knowing how to read: `attestation` (the `Type` code, e.g. `"NKO"`) and
+`manuscripts` (the specific published editions, e.g.
+`"NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz"`). Both are reported as neutral
+text-critical data, per this project's own discipline (see
+[Design principles](#design-principles)) - never an argument for or against
+a reading.
+
+**This legend is TAGNT (Greek NT) specific** - straight from TAGNT's own
+source-file header, not paraphrased:
+
+| Letter | Tradition | Meaning |
+|---|---|---|
+| `N` | "Ancient" | Greek in Nestle-Aland, the base text most modern translations use |
+| `K` | "Traditional" | Greek behind the KJV, i.e. the Textus Receptus per Scrivener's 1894 edition |
+| `O` | "Others" | Any other Greek reading found in a major edition, rarely translated |
+
+A word's `Type` is the concatenation of every tradition that attests it -
+`"NKO"` (94% of all TAGNT words) means all three traditions agree; `"KO"`
+means Ancient (Nestle-Aland) doesn't have this word at all (the real,
+famous example: Mark 16:9-20 is tagged `KO` - absent from the Nestle-Aland
+base text, present in the Traditional/KJV text and some other editions).
+**Case carries real meaning too**: a letter is lowercase (`n`/`k`/`o`) when
+that tradition's own variant reading is "too minor to entail a different
+translation" (e.g. spelling, word order) - `"NKo"` means all three attest
+the word, but the Other-edition text differs in some way too small to
+affect meaning. Parentheses (e.g. `"N(K)(O)"`) mark a tradition where the
+word is present but as a differing variant reading, rather than
+identically.
+
+`manuscripts` names the actual published editions behind that Type code:
+`Byz` (Byzantine/RP 2005), `NA27`/`NA28` (Nestle-Aland), `TR` (Scrivener's
+1894 Textus Receptus), `SBL` (Holmes 2010), `Treg` (Tregelles), `WH`
+(Westcott-Hort), `Tyn` (Tyndale House GNT 2017).
+
+**TAHOT (Hebrew OT) uses a different scheme entirely** - Hebrew textual
+criticism isn't about Nestle-Aland vs. Textus Receptus. Its `Type` letters
+track the Leningrad Codex against the Masoretic Qere/Ketiv apparatus
+(`L`=Leningrad text, `Q`=Qere scribal correction, `K`=Ketiv/original
+consonantal text, `R`=restored text, `X`=text supplied from the LXX), with
+the same lowercase-for-minor-variant convention. Don't read a TAHOT `Type`
+value against the TAGNT table above - they use the same field name for two
+unrelated apparatus systems.
+
 ## Building the database
 
 ```sh

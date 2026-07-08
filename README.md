@@ -10,6 +10,14 @@ public-domain English translations) into a derived SQLite database, then serves
 verbatim, provenance-tagged lookups and complete-or-fail concordance over it -
 through an MCP server, a CLI, or as a Go library.
 
+Paired with an LLM, this stops being a reference you flip through by hand: you
+ask a follow-up in plain language ("also check the LXX," "cross-reference the
+Hebrew root"), and the model fans that out into the right tool calls, then
+finds patterns across dozens of citations at once - the iterative
+cross-referencing a printed concordance leaves entirely to you. The engine
+still owns the text; the LLM adds conversational follow-through and synthesis
+on top of it, never in place of it.
+
 ## Why it's built this way
 
 Three texts shape the engine's design, not just its name:

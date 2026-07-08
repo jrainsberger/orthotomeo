@@ -479,7 +479,7 @@ throughout the actual exchange from what a citation states outright.)*
 
 ## License
 
-Code: MIT (LICENSE file pending). Data is **not** relicensed by this
+Code: [MIT](LICENSE). Data is **not** relicensed by this
 project - each source keeps its own license as recorded in
 `sources/sources.json` (a mix of CC BY 4.0 and Public Domain; see that file for
 the exact terms and attribution per source). Non-redistributable sources (e.g.

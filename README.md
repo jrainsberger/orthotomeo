@@ -1,5 +1,9 @@
 # orthotomeo
 
+*An independent personal project, built and maintained by
+[Justin Rainsberger](https://github.com/jrainsberger) on his own time. Not
+affiliated with, sponsored by, or representing any employer.*
+
 **ὀρθοτομέω** — "to cut straight," from 2 Timothy 2:15: *"Be diligent to present
 yourself approved to God, a worker who does not need to be ashamed, cutting
 straight the word of truth."*

@@ -126,6 +126,37 @@ across editions - see PLAN.md's cross-cutting invariant #4.
 | `--reference` | `STEPBible-Data/` (TAGNT, TAHOT, lexicons, morphology codes), `LXX-Swete-1930/` |
 | `--corpus` | `bible-text/` (KJV, ASV, WEB, Brenton, OSS-LXX-lemma), `cross_references.txt` |
 
+**The exact path under each root is not configurable per run** - it's fixed,
+per source, in [`sources/sources.json`](sources/sources.json)'s `source_file`
+field, the one place this mapping lives (no loader hard-codes a path itself;
+[`corpus.Locate`](corpus/corpus.go) is the only path-aware code in the whole
+importer, and it just joins `root + source_file` and globs). `--corpus` and
+`--reference` are tried in that order per source, so a tree can live under
+either root - but the path segments below whichever root resolves it are
+literal, not patterns (only the filename portion is a glob, where shown
+below):
+
+| Source | Path under its root |
+|---|---|
+| KJV | `bible-text/KJV/KJV.json` |
+| ASV | `bible-text/ASV/ASV.json` |
+| WEB | `bible-text/WEB/*.usfm` |
+| Brenton | `bible-text/LXX/eng-Brenton_html/*.htm` |
+| OSS-LXX-lemma | `bible-text/LXX/GreekResources-master/LxxLemmas/*.js` |
+| TAGNT | `STEPBible-Data/Translators Amalgamated OT+NT/TAGNT*.txt` |
+| TAHOT | `STEPBible-Data/Translators Amalgamated OT+NT/TAHOT*.txt` |
+| TBESG / TBESH | `STEPBible-Data/Lexicons/TBESG*.txt` / `TBESH*.txt` |
+| TEGMC / TEHMC | `STEPBible-Data/Morphology codes/TEGMC*.txt` / `TEHMC*.txt` |
+| TVTMS | `STEPBible-Data/Versification/TVTMS*.txt` |
+| Swete | `LXX-Swete-1930/*.csv` |
+| OpenBible-xref | `cross_references.txt` |
+
+Placing files anywhere else fails fast with `corpus tree missing: <path>
+under [...]`, naming exactly what it looked for. To use a different layout,
+edit the `source_file` value in `sources/sources.json` - that's the only
+change needed, since every loader reads it from there rather than assuming
+a path.
+
 STEPBible-Data is published by STEPBible.org / Tyndale House Cambridge; the
 Swete CSV is the archive.org digitization of the 1930 Cambridge edition; the
 public-domain English translations and Open Scriptures lemma files are

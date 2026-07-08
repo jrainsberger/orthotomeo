@@ -1,9 +1,5 @@
 # orthotomeo
 
-*An independent personal project, built and maintained by
-[Justin Rainsberger](https://github.com/jrainsberger) on his own time. Not
-affiliated with, sponsored by, or representing any employer.*
-
 **ὀρθοτομέω** — "to cut straight," from 2 Timothy 2:15: *"Be diligent to present
 yourself approved to God, a worker who does not need to be ashamed, cutting
 straight the word of truth."*
@@ -21,6 +17,10 @@ finds patterns across dozens of citations at once - the iterative
 cross-referencing a printed concordance leaves entirely to you. The engine
 still owns the text; the LLM adds conversational follow-through and synthesis
 on top of it, never in place of it.
+
+*An independent personal project, built and maintained by
+[Justin Rainsberger](https://github.com/jrainsberger). Not affiliated with, 
+sponsored by, or representing any employer.*
 
 ## Why it's built this way
 

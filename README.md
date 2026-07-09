@@ -22,10 +22,17 @@ Three texts shape the engine's design, not just its name:
   itself whenever the two conflict. The engine has no lexicon-category shortcut
   for settling a word's sense; it returns the raw text and lets every occurrence
   speak.
-- **1 Peter 4:11** - *"if any man speak, let him speak as the oracles of God."*
-  Speech *about* scripture is accountable to scripture as its own oracle. A
+- **1 Peter 4:11** - *"If any man speak, let him speak as the oracles of God;
+  if any man minister, let him do it as of the ability which God giveth: that
+  God in all things may be glorified through Jesus Christ, to whom be praise
+  and dominion for ever and ever. Amen."* Speech *about* scripture is
+  accountable to scripture as its own oracle - and the verse doesn't stop at
+  the accountability, it names what's actually at stake: *that God in all
+  things may be glorified.* This project is doxology before it's software. A
   citation the engine returns must be traceable to an actual row in an actual
-  source file - never a summary, a paraphrase, or a claim from memory.
+  source file - never a summary, a paraphrase, or a claim from memory - because
+  what's on the line when scripture is handled carelessly isn't a bug, it's
+  whether God is glorified in how His word gets handled.
 - **2 Timothy 2:15** - the commission this project is named for, not just framed
   by. "Cutting straight" isn't a metaphor for careful reading in general; it's
   an explicit charge to handle the text with exactly this kind of precision -

@@ -33,11 +33,13 @@ Three texts shape the engine's design, not just its name:
   (**every** matching occurrence, or an error - never a silent partial answer)
   rather than a best-effort search.
 
-Practically, this means: **the engine owns *text*, the LLM client owns
-*meaning*.** It never interprets, never argues a position, and never quotes
-original-language text it didn't get from its own database. Given a query, it
-either returns the complete, provenance-tagged result set, or it raises an
-error - it does not silently truncate, guess, or paraphrase.
+Practically, this means: **the engine owns evidence, the LLM traces usage,
+you own the conclusions.** The engine never interprets, never argues a
+position, and never quotes original-language text it didn't get from its own
+database. Given a query, it either returns the complete, provenance-tagged
+result set, or it raises an error - it does not silently truncate, guess, or
+paraphrase. The LLM fans that out into patterns across occurrences; it never
+gets the last word on what they mean.
 
 ## Design principles
 
@@ -267,6 +269,30 @@ Twelve tools are exposed: `resolve_ref`, `get_verse`, `get_passage`,
 accepts a USFM code or the full English book name, in any case (`MAT`,
 `mat`, `Matthew`, `MATTHEW` all resolve to the same book).
 
+This is stdio, for an MCP host running on the same machine as the DB.
+
+#### Connecting to the hosted instance
+
+No local binary, no local DB, no build step - point an MCP client's
+remote-server config at the hosted instance instead:
+
+```json
+{
+  "mcpServers": {
+    "orthotomeo": {
+      "url": "https://orthotomeo-web-169786747629.us-central1.run.app/mcp"
+    }
+  }
+}
+```
+
+The exact config shape (a `url` field vs. a `command`/`args` pair) depends
+on your MCP client - check its docs for "remote MCP server" or "Streamable
+HTTP" support. Same twelve tools as the stdio server above; this is in fact
+this project's primary reason for having a cloud deployment at all. It's a
+public, unauthenticated, cost-bounded instance - rate-limited to 60
+requests/hour per IP and 2,000/day total.
+
 ### As a CLI
 
 ```sh
@@ -349,6 +375,11 @@ curl "http://127.0.0.1:8420/concord?query=G0859&corpus=TAGNT"
 }
 ```
 
+Everything above is loopback-only, by design (see `cmd/orthotomeo-web`'s doc
+comment). `cmd/orthotomeo-web-cloud` is the separate, publicly-reachable
+counterpart (e.g. for Cloud Run) - a different binary and image, not a flag
+on this one; see its own package doc comment for what's different.
+
 ### As a desktop app
 
 ```sh
@@ -375,11 +406,11 @@ fmt.Println(e.Cite(citations)) // Markdown-formatted, fully cited
 A real, captured exchange (not fabricated) - an LLM client with the system
 prompt shown below (and orthotomeo's MCP tools) registered, asked about the
 project's own namesake word. Included because it demonstrates the "engine
-owns text, the LLM owns meaning" principle in practice, not just in
-description: every grammatical/attestation claim traces to a tool result,
-the model stops and asks before reaching into LXX or Hebrew data on its own,
-and it explicitly labels its own cross-corpus synthesis as inference rather
-than a tool-verified fact.
+owns evidence, the LLM traces usage, you own the conclusions" principle in
+practice, not just in description: every grammatical/attestation claim
+traces to a tool result, the model stops and asks before reaching into LXX
+or Hebrew data on its own, and it explicitly labels its own cross-corpus
+synthesis as inference rather than a tool-verified fact.
 
 > **Me:** Where does the Greek word *ὀρθοτομέω* occur in the New Testament,
 > and what does it mean in context?

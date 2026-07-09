@@ -11,3 +11,13 @@
 /orthotomeo*.exe
 *.test
 *.out
+
+# Personal ops runbook - deliberately kept out of the public repo
+/DEPLOY.md
+
+# Cloud Run deployment tooling - deliberately kept out of the public repo
+# (the server code it deploys, cmd/orthotomeo-web-cloud/ and mcpserver/,
+# stays public; the deployment mechanics don't)
+/Dockerfile.cloud
+/Dockerfile.cloud.dockerignore
+/deploy/

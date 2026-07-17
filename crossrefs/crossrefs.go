@@ -2,6 +2,14 @@
 // cross-reference dataset (CC-BY) into cross_references. Links are deterministic
 // data with a signed community vote weight; they are never LLM-synthesized.
 // Ticket 21.
+//
+// TODO: "find every NT quotation of Isaiah" is NOT answerable from this
+// data today, despite cross_references.kind existing in the schema - this
+// loader never sets it, so every row defaults to 'thematic' (TSK is a
+// general topical cross-reference set, not a quotation-specifically-
+// tagged one). Answering that question for real needs a different source
+// entirely (a formal NT-quotes-OT list), not a query change against what's
+// here. (Raised via ChatGPT feedback on the MCP tool set, 2026-07-09.)
 package crossrefs
 
 import (

@@ -71,3 +71,10 @@ docker-build:
 ## Mounts $(DB) read-only into the container at the path the image expects.
 docker-run:
 	docker run --rm -p 8420:8420 -v "$(abspath $(DB))":/data/orthotomeo.db:ro orthotomeo-web
+
+## Cloud Run build/deploy targets live in deploy/cloud.mk - deliberately
+## kept out of the public repo (see .gitignore), so this include is silent
+## and this Makefile stays clean of any cloud-deploy reference for anyone
+## cloning the public repo. `-include` (not `include`): don't error if the
+## file doesn't exist.
+-include deploy/cloud.mk

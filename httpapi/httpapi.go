@@ -40,10 +40,10 @@ func New(e *engine.Engine) *Server {
 	return &Server{e: e}
 }
 
-// Handler returns the routed http.Handler: the API endpoints under their
-// own paths, plus the embedded static UI at "/" for everything else.
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
+// registerAPIRoutes adds every JSON endpoint (no UI routes) to mux - the
+// part Handler and APIHandler both need, factored out so the two can never
+// drift apart on which JSON routes exist.
+func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /verse", s.handleVerse)
 	mux.HandleFunc("GET /passage", s.handlePassage)
 	mux.HandleFunc("GET /concord", s.handleConcord)
@@ -52,8 +52,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /interlinear", s.handleInterlinear)
 	mux.HandleFunc("GET /define", s.handleDefine)
 	mux.HandleFunc("GET /books", handleBooks)
+}
+
+// Handler returns the routed http.Handler: the API endpoints under their
+// own paths, plus the embedded static UI at "/" for everything else.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	s.registerAPIRoutes(mux)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticFS)))
+	mux.HandleFunc("GET /favicon.ico", handleFavicon)
 	mux.HandleFunc("GET /{$}", handleIndex)
+	return mux
+}
+
+// APIHandler returns just the JSON endpoints - no /static/, no "/" index -
+// for a deployment that wants the API reachable without also publishing
+// the reading-view UI (e.g. while the UI is still under active, unreleased
+// development).
+func (s *Server) APIHandler() http.Handler {
+	mux := http.NewServeMux()
+	s.registerAPIRoutes(mux)
 	return mux
 }
 

@@ -1,4 +1,4 @@
-package main
+package mcpserver
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func buildFixture(t *testing.T) string {
 	return path
 }
 
-// startTestServer wires a real server (this package's registerTools) to a
+// startTestServer wires a real server (this package's RegisterTools) to a
 // real client over the SDK's in-memory transport pair - a genuine MCP
 // session, not a bypassed direct function call.
 func startTestServer(t *testing.T, dbPath string) *mcp.ClientSession {
@@ -92,7 +92,7 @@ func startTestServer(t *testing.T, dbPath string) *mcp.ClientSession {
 	t.Cleanup(func() { e.Close() })
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "0.0.0"}, nil)
-	registerTools(server, e)
+	RegisterTools(server, e)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 

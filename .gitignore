@@ -21,3 +21,16 @@
 /Dockerfile.cloud
 /Dockerfile.cloud.dockerignore
 /deploy/
+
+# Defensive - none of these exist in the repo today, but this is a public
+# repo now, and none of them should ever land here even by accident.
+.env
+.env.*
+*.pem
+*.key
+credentials/
+secrets/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

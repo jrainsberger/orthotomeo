@@ -4,6 +4,14 @@
 // 16:9-20 = Type "KO": Traditional/Other manuscripts, absent from the
 // Nestle-Aland base text) - with no argument for or against a variant.
 // Ticket 18.
+//
+// TODO: this is NOT a variant apparatus, and "show all textual variants
+// affecting this verse" isn't fully answerable from it - Attestation says
+// *whether* a word is contested (which editions carry it) but never *what
+// the alternative reading says*; the schema carries no alternate-text
+// field at all. Building that would mean ingesting a genuinely different
+// source (a critical apparatus), not just adding a tool over what's here.
+// (Raised via ChatGPT feedback on the MCP tool set, 2026-07-09.)
 package attestation
 
 import (

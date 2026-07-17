@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jrainsberger/orthotomeo",
+  "description": "Read-only scripture-study engine: complete-or-fail concordance over Greek NT, Hebrew OT, LXX.",
+  "repository": {
+    "url": "https://github.com/jrainsberger/orthotomeo",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/jrainsberger/orthotomeo/main/orthotomeo-icon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://orthotomeo.app/mcp"
+    }
+  ]
+}

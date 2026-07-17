@@ -287,7 +287,7 @@ remote-server config at the hosted instance instead:
 {
   "mcpServers": {
     "orthotomeo": {
-      "url": "https://orthotomeo-web-169786747629.us-central1.run.app/mcp"
+      "url": "https://orthotomeo.app/mcp"
     }
   }
 }

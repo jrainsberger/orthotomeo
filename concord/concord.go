@@ -48,6 +48,13 @@ func matchColumn(query, by string) string {
 	return "lemma"
 }
 
+// TODO: add "morph" as a fourth match column (w.morph_code) - a real gap,
+// not yet supported: today there's no way to ask "every occurrence of
+// this morphology" (e.g. every aorist passive in TAGNT) the way lemma/
+// dstrong/surface already can. Same complete-or-fail concordance
+// machinery, one more column - pure retrieval over an already-tagged
+// field, fits the existing philosophy cleanly. (Raised via ChatGPT
+// feedback on the MCP tool set, 2026-07-09.)
 func columnExpr(col string) (string, error) {
 	switch col {
 	case "dstrong":
@@ -258,6 +265,15 @@ func Count(db *sql.DB, query, corpus, by string) (Tally, error) {
 // query). It does not search across verse boundaries: word_no is verse-
 // relative in the source data (T10/T11), so "adjacent" only means anything
 // within a single verse.
+//
+// TODO: this is ORDERED and forward-only (extendChain/nextTokenInVerse fix
+// tokens[0] as the anchor and only walk forward - w.word_no > previous).
+// "πίστις and ἔργον within 8 words, either order" is NOT expressible today
+// - if ἔργον precedes πίστις in a verse, that occurrence is silently
+// missed. Add a new concord_proximity tool/function for the unordered
+// case rather than overloading ConcordPhrase's existing ordered contract -
+// try both token orderings per anchor verse and union the results. (Raised
+// via ChatGPT feedback on the MCP tool set, 2026-07-09.)
 func ConcordPhrase(db *sql.DB, tokens []string, corpus string, window int) ([]retriever.Citation, error) {
 	if len(tokens) < 2 {
 		return nil, fmt.Errorf("ConcordPhrase: need at least 2 tokens, got %d", len(tokens))

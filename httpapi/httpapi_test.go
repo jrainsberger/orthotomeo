@@ -366,7 +366,7 @@ func TestIndexServesHTML(t *testing.T) {
 
 func TestStaticAssetsServed(t *testing.T) {
 	ts := newTestServer(t)
-	for _, path := range []string{"/static/app.js", "/static/style.css"} {
+	for _, path := range []string{"/static/app.js", "/static/style.css", "/static/favicon.svg"} {
 		res, err := http.Get(ts.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -375,5 +375,65 @@ func TestStaticAssetsServed(t *testing.T) {
 		if res.StatusCode != http.StatusOK {
 			t.Errorf("GET %s status = %d, want 200", path, res.StatusCode)
 		}
+	}
+}
+
+// TestFaviconIcoServed is the regression test for the exact gap seen live
+// in Cloud Logging (GET /favicon.ico 404) - a browser requests this path
+// directly regardless of any <link rel="icon"> tag, so the icon being
+// reachable at /static/favicon.svg alone isn't enough.
+func TestFaviconIcoServed(t *testing.T) {
+	ts := newTestServer(t)
+	res, err := http.Get(ts.URL + "/favicon.ico")
+	if err != nil {
+		t.Fatalf("GET /favicon.ico: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	if ct := res.Header.Get("Content-Type"); ct != "image/svg+xml" {
+		t.Errorf("Content-Type = %q, want image/svg+xml", ct)
+	}
+}
+
+func newAPITestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	e, err := engine.Open(buildFixture(t))
+	if err != nil {
+		t.Fatalf("engine.Open: %v", err)
+	}
+	t.Cleanup(func() { e.Close() })
+	ts := httptest.NewServer(httpapi.New(e).APIHandler())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// TestAPIHandlerExcludesUI is the acceptance criterion for a deployment
+// that wants the JSON API reachable without also publishing the reading-
+// view UI (see cmd/orthotomeo-web-cloud, where the UI is deliberately
+// disabled while it's still under active, unreleased development) - the
+// index page and every /static/ asset must 404, while a real JSON endpoint
+// still works.
+func TestAPIHandlerExcludesUI(t *testing.T) {
+	ts := newAPITestServer(t)
+	for _, path := range []string{"/", "/static/app.js", "/static/style.css", "/static/favicon.svg", "/favicon.ico"} {
+		res, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s status = %d, want 404 (UI must not be reachable via APIHandler)", path, res.StatusCode)
+		}
+	}
+
+	res, err := http.Get(ts.URL + "/books")
+	if err != nil {
+		t.Fatalf("GET /books: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("GET /books status = %d, want 200 (JSON API must still work)", res.StatusCode)
 	}
 }

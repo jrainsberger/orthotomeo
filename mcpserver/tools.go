@@ -1,13 +1,34 @@
-// Tool registration for the orthotomeo MCP server (T20). Every tool is a
-// direct, typed delegation to one engine.Engine method - no tool builds
-// SQL, and no tool does anything an engine caller couldn't already do
-// (Concord spec: "the MCP server is the engine; the LLM client is the
-// analysis layer"). mcp.AddTool's generic handler already validates input
-// against the inferred schema and marshals a non-nil Out value as both
-// StructuredContent and human-readable JSON text, so every handler here is
-// just "call the engine method, return its result" - no bespoke response
-// building.
-package main
+// Package mcpserver registers the orthotomeo MCP tool set (T20) onto an
+// *mcp.Server - the one place that wiring exists, shared by every MCP
+// transport this project exposes (cmd/orthotomeo-mcp's stdio transport,
+// and cmd/orthotomeo-web-cloud's Streamable HTTP transport for remote
+// clients), so a tool added or changed here never needs to be kept in
+// sync across binaries.
+//
+// Every tool is a direct, typed delegation to one engine.Engine method - no
+// tool builds SQL, and no tool does anything an engine caller couldn't
+// already do (Concord spec: "the MCP server is the engine; the LLM client
+// is the analysis layer"). mcp.AddTool's generic handler already validates
+// input against the inferred schema and marshals a non-nil Out value as
+// both StructuredContent and human-readable JSON text, so every handler
+// here is just "call the engine method, return its result" - no bespoke
+// response building.
+//
+// TODO: two tool ideas raised via ChatGPT feedback (2026-07-09) were
+// deliberately NOT added here, on purpose rather than by omission:
+//   - "every occurrence of this syntactic construction" - the corpus only
+//     tags word-level morphology (case/tense/voice/etc.), never phrase- or
+//     clause-level syntax. Answering this for real means imposing some
+//     modern parsing framework onto the text to invent syntax data that
+//     doesn't exist here - that's interpretation baked into the tool, not
+//     retrieval, which is the one thing this package's tools are supposed
+//     to never do.
+//   - "every cross-reference chain, recursively" - sounds like retrieval
+//     but isn't quite: depth limits, cycle handling, and deduplication of
+//     converging paths are real design decisions with no textually-obvious
+//     answer. Worth its own scoped ticket with explicit bounds, not a
+//     one-line tool added here.
+package mcpserver
 
 import (
 	"context"
@@ -178,12 +199,12 @@ func toCitationsResult(cs []retriever.Citation, err error) (citationsResult, err
 	return citationsResult{Citations: cs, Sources: srcs}, nil
 }
 
-// registerTools wires every engine.Engine method to a typed MCP tool. Each
+// RegisterTools wires every engine.Engine method to a typed MCP tool. Each
 // handler returns (nil, out, err): mcp.AddTool's ToolHandlerFor populates
 // CallToolResult.Content/StructuredContent from out automatically, and
 // wraps a returned err as a tool-level error (invariant #3's "raise, don't
 // silently truncate" reaching the MCP boundary unchanged).
-func registerTools(s *mcp.Server, e *engine.Engine) {
+func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "resolve_ref",
 		Description: "Reports, for every per-verse content edition (KJV, ASV, WEB, Brenton, TAGNT, TAHOT, Swete, OSS-LXX-lemma), " +
@@ -248,6 +269,11 @@ func registerTools(s *mcp.Server, e *engine.Engine) {
 		res, err := toCitationsResult(e.ConcordPhrase(in.Tokens, in.Corpus, in.Window))
 		return nil, res, err
 	})
+
+	// TODO: concord_phrase is ORDERED only - see ConcordPhrase's doc comment
+	// (concord/concord.go) for why. Add a concord_proximity tool for the
+	// unordered case ("πίστις and ἔργον within 8 words, either order") as
+	// its own tool rather than overloading this one's contract.
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "count",

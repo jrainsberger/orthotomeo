@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jrainsberger/orthotomeo/engine"
+	"github.com/jrainsberger/orthotomeo/mcpserver"
 )
 
 func main() {
@@ -27,7 +28,7 @@ func main() {
 	defer e.Close()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "orthotomeo", Version: "0.1.0"}, nil)
-	registerTools(server, e)
+	mcpserver.RegisterTools(server, e)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatalf("server: %v", err)

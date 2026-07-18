@@ -31,6 +31,27 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+// robotsTxt denies every well-behaved crawler the entire surface. This is a
+// study engine, not a site to index: crawling it spends the public
+// instance's finite request budget and surfaces nothing a search engine
+// should hold. Held as a constant rather than an embedded file so the route
+// has no "not embedded" failure branch - a policy this small should not be
+// able to 500.
+//
+// It is advisory only. A crawler that ignores robots.txt, and the
+// vulnerability scanners that probe this host, are entirely unaffected -
+// this is hygiene and load reduction, not a security control.
+const robotsTxt = "User-agent: *\nDisallow: /\n"
+
+// handleRobots serves robotsTxt at the conventional path. Registered on both
+// the full UI Handler and the JSON-only APIHandler: the public deployment
+// runs the latter, which is precisely the surface crawlers were reaching
+// (observed live as GET /robots.txt 404).
+func handleRobots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(robotsTxt))
+}
+
 // handleFavicon serves the same favicon.svg a page's own <link rel="icon">
 // points at, at the conventional /favicon.ico path too - a browser requests
 // that path directly regardless of any <link> tag, so without this route

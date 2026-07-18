@@ -40,10 +40,14 @@ func New(e *engine.Engine) *Server {
 	return &Server{e: e}
 }
 
-// registerAPIRoutes adds every JSON endpoint (no UI routes) to mux - the
-// part Handler and APIHandler both need, factored out so the two can never
-// drift apart on which JSON routes exist.
+// registerAPIRoutes adds every JSON endpoint (no UI routes) plus the crawler
+// policy to mux - the part Handler and APIHandler both need, factored out so
+// the two can never drift apart on which routes exist. robots.txt lives here
+// rather than beside the UI routes precisely because the public deployment
+// serves APIHandler: registering it with the UI would have left the one
+// surface that is actually crawled without a policy.
 func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /robots.txt", handleRobots)
 	mux.HandleFunc("GET /verse", s.handleVerse)
 	mux.HandleFunc("GET /passage", s.handlePassage)
 	mux.HandleFunc("GET /concord", s.handleConcord)

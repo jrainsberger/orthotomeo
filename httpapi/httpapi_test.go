@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -394,6 +395,44 @@ func TestFaviconIcoServed(t *testing.T) {
 	}
 	if ct := res.Header.Get("Content-Type"); ct != "image/svg+xml" {
 		t.Errorf("Content-Type = %q, want image/svg+xml", ct)
+	}
+}
+
+// TestRobotsTxtDeniesAllCrawlers is the regression test for the live gap
+// (GET /robots.txt 404, seen in Cloud Logging). It has to hold on BOTH
+// handlers: the public deployment serves APIHandler, which is exactly the
+// surface crawlers reach, so covering only the UI Handler would test the one
+// case that does not matter.
+func TestRobotsTxtDeniesAllCrawlers(t *testing.T) {
+	cases := []struct {
+		name   string
+		server func(*testing.T) *httptest.Server
+	}{
+		{name: "full UI handler", server: newTestServer},
+		{name: "JSON-only APIHandler", server: newAPITestServer},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := tc.server(t)
+			res, err := http.Get(ts.URL + "/robots.txt")
+			if err != nil {
+				t.Fatalf("GET /robots.txt: %v", err)
+			}
+			defer res.Body.Close()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", res.StatusCode)
+			}
+			if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+				t.Errorf("Content-Type = %q, want text/plain", ct)
+			}
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			if got := string(body); !strings.Contains(got, "User-agent: *") || !strings.Contains(got, "Disallow: /") {
+				t.Errorf("robots.txt = %q, want a deny-all policy", got)
+			}
+		})
 	}
 }
 

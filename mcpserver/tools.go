@@ -217,12 +217,31 @@ var readOnlyAnnotations = &mcp.ToolAnnotations{
 	OpenWorldHint: &closedWorld,
 }
 
+// resultCeilingNote describes this engine's concordance ceiling for the tool
+// descriptions below, generated from the engine's ACTUAL configured limit
+// rather than hard-coded. The public deployment sets a ceiling and a local
+// stdio server does not, so a fixed string would be a false statement on one
+// of them - and a tool description that misreports its own tool is exactly
+// the kind of unchecked claim this project exists to avoid. Telling the
+// model the limit up front also lets it narrow a broad query before it
+// fails, instead of discovering the bound by hitting it.
+func resultCeilingNote(e *engine.Engine) string {
+	n := e.MaxResults()
+	if n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" This deployment caps one concordance result at %d occurrences and refuses anything broader, "+
+		"reporting the exact match count in the error. Call count first when a query might be broad - count is never capped.", n)
+}
+
 // RegisterTools wires every engine.Engine method to a typed MCP tool. Each
 // handler returns (nil, out, err): mcp.AddTool's ToolHandlerFor populates
 // CallToolResult.Content/StructuredContent from out automatically, and
 // wraps a returned err as a tool-level error (invariant #3's "raise, don't
 // silently truncate" reaching the MCP boundary unchanged).
 func RegisterTools(s *mcp.Server, e *engine.Engine) {
+	ceiling := resultCeilingNote(e)
+
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "resolve_ref",
 		Title:       "Resolve reference",
@@ -279,7 +298,7 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 		Annotations: readOnlyAnnotations,
 		Description: "Complete-or-fail concordance: every words row in corpus whose lemma, dStrong, or (with by=\"surface\") " +
 			"exact inflected surface form matches query. Route lemma/Strong's-number/surface-word lookups here, " +
-			"never by writing SQL or guessing occurrences from memory.",
+			"never by writing SQL or guessing occurrences from memory." + ceiling,
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in concordLemmaArgs) (*mcp.CallToolResult, citationsResult, error) {
 		res, err := toCitationsResult(e.ConcordLemma(in.Query, in.Corpus, in.By))
 		return nil, res, err
@@ -291,7 +310,7 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 		Annotations: readOnlyAnnotations,
 		Description: "Complete-or-fail multi-word concordance: every occurrence, within one verse, of tokens (lemma strings) " +
 			"appearing in order within window intervening words of each other (window=0 = strictly adjacent). " +
-			"This is the tool for a phrase query like εἰς ἄφεσιν.",
+			"This is the tool for a phrase query like εἰς ἄφεσιν." + ceiling,
 		InputSchema: schemaFor[concordPhraseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in concordPhraseArgs) (*mcp.CallToolResult, citationsResult, error) {
 		res, err := toCitationsResult(e.ConcordPhrase(in.Tokens, in.Corpus, in.Window))

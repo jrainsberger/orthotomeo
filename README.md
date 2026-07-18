@@ -298,7 +298,19 @@ on your MCP client - check its docs for "remote MCP server" or "Streamable
 HTTP" support. Same twelve tools as the stdio server above; this is in fact
 this project's primary reason for having a cloud deployment at all. It's a
 public, unauthenticated, cost-bounded instance - rate-limited to 60
-requests/hour per IP and 2,000/day total.
+requests/hour per IP and 2,000/day total, and a single concordance result is
+capped at 2,000 occurrences.
+
+Those two bounds do different jobs: the rate limit caps how *often* you can
+ask, the result cap caps how *expensive* one ask can be. A query matching more
+than the cap is refused outright with the exact match count in the error -
+never silently truncated, which would break complete-or-fail. Call `count`
+first for a broad query; `count` is never capped, since it returns numbers
+rather than Citations.
+
+The cap applies only to this hosted instance. The CLI, desktop, and local web
+builds are unbounded, so a study that genuinely needs every occurrence of a
+common word (TAGNT `ὁ` matches 20,705) belongs there - or get in touch.
 
 ### As a CLI
 

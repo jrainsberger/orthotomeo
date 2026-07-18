@@ -180,6 +180,13 @@ func (e *Engine) Count(query, corpus, by string) (concord.Tally, error) {
 	return concord.Count(e.db, query, corpus, by)
 }
 
+// MaxResults reports the concordance ceiling this Engine was opened with, or
+// 0 when it is unbounded. Read-only by design: a transport needs to describe
+// the limit accurately (see mcpserver's tool descriptions, which are built
+// from this rather than hard-coding a number that would be wrong on a local
+// unbounded server) without being able to change it.
+func (e *Engine) MaxResults() int { return e.maxResults }
+
 // checkResultLimit refuses a query whose complete result set would exceed
 // this Engine's ceiling, before concord materializes a single row. It costs
 // one extra indexed COUNT(*) and runs only when a ceiling is configured, so

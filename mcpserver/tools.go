@@ -199,6 +199,24 @@ func toCitationsResult(cs []retriever.Citation, err error) (citationsResult, err
 	return citationsResult{Citations: cs, Sources: srcs}, nil
 }
 
+// closedWorld is shared by every tool's ToolAnnotations below - none of
+// them ever interact with the open web or anything outside the fixed,
+// checked-in corpus, so OpenWorldHint is always false here (the default,
+// per the MCP spec, is true - a web-search-shaped tool).
+var closedWorld = false
+
+// readOnlyAnnotations is shared by every tool registered below: every one
+// is a read-only query against a closed corpus, never a write, and never
+// destructive - the same "engine never writes" invariant the rest of this
+// project holds to. Surfacing this via ToolAnnotations (rather than
+// leaving it to the description text alone) lets a client group/trust
+// tools accordingly - e.g. a connector's permission UI grouping read-only
+// tools separately from tools that can modify something.
+var readOnlyAnnotations = &mcp.ToolAnnotations{
+	ReadOnlyHint:  true,
+	OpenWorldHint: &closedWorld,
+}
+
 // RegisterTools wires every engine.Engine method to a typed MCP tool. Each
 // handler returns (nil, out, err): mcp.AddTool's ToolHandlerFor populates
 // CallToolResult.Content/StructuredContent from out automatically, and
@@ -206,7 +224,9 @@ func toCitationsResult(cs []retriever.Citation, err error) (citationsResult, err
 // silently truncate" reaching the MCP boundary unchanged).
 func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "resolve_ref",
+		Name:        "resolve_ref",
+		Title:       "Resolve reference",
+		Annotations: readOnlyAnnotations,
 		Description: "Reports, for every per-verse content edition (KJV, ASV, WEB, Brenton, TAGNT, TAHOT, Swete, OSS-LXX-lemma), " +
 			"whether a canonical reference has a counterpart there and where. Cross-edition divergence (a T4b merge/renumber/divide, " +
 			"or a reference simply missing from an edition) is reported as Caveats - never a silent shift.",
@@ -221,6 +241,8 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_verse",
+		Title:       "Get verse text",
+		Annotations: readOnlyAnnotations,
 		Description: "Returns verbatim verse text with provenance for one canonical reference, one Citation per requested edition (KJV, ASV, WEB, Brenton).",
 		InputSchema: schemaFor[getVerseArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getVerseArgs) (*mcp.CallToolResult, citationsResult, error) {
@@ -234,6 +256,8 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_passage",
+		Title:       "Get passage text",
+		Annotations: readOnlyAnnotations,
 		Description: "Returns get_verse's result for every canonical verse in a contiguous, single-book range, in order - verse boundaries preserved, never concatenated into one blob.",
 		InputSchema: schemaFor[getPassageArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in getPassageArgs) (*mcp.CallToolResult, citationsResult, error) {
@@ -250,7 +274,9 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "concord_lemma",
+		Name:        "concord_lemma",
+		Title:       "Search concordance (lemma)",
+		Annotations: readOnlyAnnotations,
 		Description: "Complete-or-fail concordance: every words row in corpus whose lemma, dStrong, or (with by=\"surface\") " +
 			"exact inflected surface form matches query. Route lemma/Strong's-number/surface-word lookups here, " +
 			"never by writing SQL or guessing occurrences from memory.",
@@ -260,7 +286,9 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "concord_phrase",
+		Name:        "concord_phrase",
+		Title:       "Search concordance (phrase)",
+		Annotations: readOnlyAnnotations,
 		Description: "Complete-or-fail multi-word concordance: every occurrence, within one verse, of tokens (lemma strings) " +
 			"appearing in order within window intervening words of each other (window=0 = strictly adjacent). " +
 			"This is the tool for a phrase query like εἰς ἄφεσιν.",
@@ -277,6 +305,8 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "count",
+		Title:       "Count occurrences",
+		Annotations: readOnlyAnnotations,
 		Description: "Occurrence tally (total + per-book breakdown) for the identical query concord_lemma would match. count.Total always equals len(concord_lemma(...)) - use this to sanity-check a concordance result, or when only the number matters.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in countArgs) (*mcp.CallToolResult, concord.Tally, error) {
 		t, err := e.Count(in.Query, in.Corpus, in.By)
@@ -285,6 +315,8 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "parse",
+		Title:       "Parse morphology",
+		Annotations: readOnlyAnnotations,
 		Description: "Returns dStrong + expanded morphology (via the T6 morph_codes table) for every word in a verse, or one word if word is given. LXX corpora (Swete, OSS-LXX-lemma) are always Flagged - neither carries morphology.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in wordScopedArgs) (*mcp.CallToolResult, citationsResult, error) {
 		res, err := toCitationsResult(parseTool(e, in))
@@ -292,7 +324,9 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "interlinear",
+		Name:        "interlinear",
+		Title:       "Interlinear reading view",
+		Annotations: readOnlyAnnotations,
 		Description: "Returns a row-aligned reading view for every word in a verse (or one word, if word is given): original " +
 			"text, transliteration, gloss (via lexicon_lookup), and grammar stacked per word - the composed display shape " +
 			"for a study reading view, built on parse and lexicon_lookup rather than any new query.",
@@ -313,6 +347,8 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "lemmatize",
+		Title:       "List lemmas",
+		Annotations: readOnlyAnnotations,
 		Description: "Returns the ordered lemma list for a verse (words with no lemma are omitted, not fabricated).",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in lemmatizeArgs) (*mcp.CallToolResult, citationsResult, error) {
 		r, err := ref(e, in.Book, in.Chapter, in.Verse)
@@ -324,7 +360,9 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "attestation",
+		Name:        "attestation",
+		Title:       "Manuscript attestation",
+		Annotations: readOnlyAnnotations,
 		Description: "Returns the WHNT-style Type/Editions manuscript-tradition columns as neutral text-critical data " +
 			"(e.g. Mark 16:9-20 = Type KO) - which editions carry a word, with no argument for or against a variant.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in wordScopedArgs) (*mcp.CallToolResult, citationsResult, error) {
@@ -333,7 +371,9 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "lexicon_lookup",
+		Name:        "lexicon_lookup",
+		Title:       "Lexicon lookup",
+		Annotations: readOnlyAnnotations,
 		Description: "Resolves a disambiguated Strong's number (dStrong) to its lexicon entry: lemma, transliteration, gloss, " +
 			"and - for a Greek entry only - a fuller definition (Abbott-Smith 1922, Public Domain). A Hebrew entry's " +
 			"definition field is always omitted: it is abridged BDB via Online Bible, which requires permission not yet " +
@@ -346,6 +386,8 @@ func RegisterTools(s *mcp.Server, e *engine.Engine) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "cite",
+		Title:       "Format citation",
+		Annotations: readOnlyAnnotations,
 		Description: "Renders Citations (from any of the above tools) as quoted, fully-attributed Markdown bullets - the only sanctioned bridge from a query result to pastable study-document text.",
 		InputSchema: schemaFor[citeArgs](),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in citeArgs) (*mcp.CallToolResult, citeResult, error) {

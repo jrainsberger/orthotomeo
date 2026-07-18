@@ -31,6 +31,25 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+// staticCacheControl lets a browser reuse an embedded asset for an hour
+// without asking again. Deliberately modest: these filenames are not
+// content-hashed, so a long max-age would strand visitors on stale JS/CSS
+// after a deploy with no way to bust it. An hour removes nearly every repeat
+// request within a session - which is the actual cost being addressed, since
+// each one otherwise wakes the container - while a redeploy is still picked
+// up promptly. Revisit only alongside content-hashed filenames.
+const staticCacheControl = "public, max-age=3600"
+
+// cacheStatic sets that policy on the embedded asset routes. Without it every
+// revisit issues a conditional request: cheap individually, but it is the
+// single largest source of avoidable traffic once a UI is published.
+func cacheStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", staticCacheControl)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // robotsTxt denies every well-behaved crawler the entire surface. This is a
 // study engine, not a site to index: crawling it spends the public
 // instance's finite request budget and surfaces nothing a search engine

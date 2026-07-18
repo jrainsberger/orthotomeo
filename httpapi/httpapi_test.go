@@ -379,6 +379,24 @@ func TestStaticAssetsServed(t *testing.T) {
 	}
 }
 
+// Embedded assets never change between deploys, so every revisit
+// re-requesting them is pure waste - and on the cloud instance each one wakes
+// the container. A max-age removes them entirely within a session.
+func TestStaticAssetsCarryCacheControl(t *testing.T) {
+	ts := newTestServer(t)
+	res, err := http.Get(ts.URL + "/static/app.js")
+	if err != nil {
+		t.Fatalf("GET /static/app.js: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	if cc := res.Header.Get("Cache-Control"); !strings.Contains(cc, "max-age=") {
+		t.Errorf("Cache-Control = %q, want a max-age directive", cc)
+	}
+}
+
 // TestFaviconIcoServed is the regression test for the exact gap seen live
 // in Cloud Logging (GET /favicon.ico 404) - a browser requests this path
 // directly regardless of any <link rel="icon"> tag, so the icon being

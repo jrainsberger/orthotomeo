@@ -43,6 +43,30 @@ type Engine struct {
 // occurrence count so a caller can narrow the query or call Count instead.
 var ErrResultTooLarge = errors.New("engine: result set exceeds this engine's limit")
 
+// ResultTooLargeError is the concrete error a refused query returns. It
+// carries the numbers rather than only formatting them into a sentence, so a
+// transport can render its own message for its own audience and report the
+// counts as structured data instead of parsing them back out of prose. The
+// default text here is written for a developer or an LLM tool caller; the
+// HTTP API rewrites it for someone reading it in a browser.
+//
+// errors.Is(err, ErrResultTooLarge) still matches, so callers that only need
+// the class and not the numbers are unaffected.
+type ResultTooLargeError struct {
+	Op      string // the refused operation, e.g. "ConcordLemma"
+	Matched int    // how many occurrences the query actually matches
+	Limit   int    // the ceiling this Engine was opened with
+}
+
+func (e *ResultTooLargeError) Error() string {
+	return fmt.Sprintf("%s: %s - query matches %d occurrences, limit is %d; narrow the query, or call Count for the tally alone",
+		e.Op, ErrResultTooLarge, e.Matched, e.Limit)
+}
+
+// Is reports this as ErrResultTooLarge so errors.Is keeps working for
+// callers branching on the class alone.
+func (e *ResultTooLargeError) Is(target error) bool { return target == ErrResultTooLarge }
+
 // DefaultPublicMaxResults is the ceiling a publicly-reachable deployment
 // should run with. At roughly half a kilobyte per rendered Citation, 2000
 // rows is about a megabyte of response - comfortable for the 256Mi cloud
@@ -204,8 +228,7 @@ func (e *Engine) checkResultLimit(op, query, corpus, by string) error {
 	if tally.Total <= e.maxResults {
 		return nil
 	}
-	return fmt.Errorf("%s: %w - query matches %d occurrences, limit is %d; narrow the query, or call Count for the tally alone",
-		op, ErrResultTooLarge, tally.Total, e.maxResults)
+	return &ResultTooLargeError{Op: op, Matched: tally.Total, Limit: e.maxResults}
 }
 
 // --- T17: parse / lemmatize ---

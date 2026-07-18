@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -109,16 +111,25 @@ func (rl *rateLimiter) bucketFor(ip string, now time.Time) *window {
 	return w
 }
 
+// allow reports whether r may proceed under this limiter, charging both the
+// global window and r's per-IP window, and names which cap refused it.
+// Split out from middleware so a caller can first decide WHICH budget a
+// request should draw on, then charge only that one (see budgets).
+func (rl *rateLimiter) allow(r *http.Request) (bool, string) {
+	now := time.Now()
+	if !rl.global.allow(now) {
+		return false, "global request cap reached - try again later"
+	}
+	if !rl.bucketFor(clientIP(r), now).allow(now) {
+		return false, "per-IP request cap reached - try again later"
+	}
+	return true, ""
+}
+
 func (rl *rateLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		now := time.Now()
-		if !rl.global.allow(now) {
-			rateLimited(w, "global request cap reached - try again later")
-			return
-		}
-		ip := clientIP(r)
-		if !rl.bucketFor(ip, now).allow(now) {
-			rateLimited(w, "per-IP request cap reached - try again later")
+		if ok, reason := rl.allow(r); !ok {
+			rateLimited(w, reason)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -130,6 +141,124 @@ func rateLimited(w http.ResponseWriter, reason string) {
 	w.Header().Set("Retry-After", "3600")
 	w.WriteHeader(http.StatusTooManyRequests)
 	json.NewEncoder(w).Encode(map[string]string{"error": reason})
+}
+
+// costClass says which budget a request draws on. The distinction is WORK,
+// not packets. A page load, a favicon, an MCP handshake and a 404 probe all
+// cost essentially nothing; a query that reaches the engine costs real
+// memory and CPU. Charging them identically is what let liveness bots eat
+// a study budget (~780/day from one poller that never invokes a tool), and
+// would let the web UI's own static assets do the same - one page load is
+// several requests before the visitor has asked anything.
+type costClass int
+
+const (
+	classFree costClass = iota
+	classWork
+)
+
+// engineRoutes are the REST paths that reach the engine. Everything else
+// this server exposes - the index, /static/, /favicon.ico, /robots.txt,
+// /books (autocomplete data the UI fetches on every page load) and any 404
+// probe - does no engine work and must never spend study budget.
+var engineRoutes = map[string]bool{
+	"/verse":       true,
+	"/passage":     true,
+	"/concord":     true,
+	"/parse":       true,
+	"/attest":      true,
+	"/interlinear": true,
+	"/define":      true,
+}
+
+// classify decides which budget r draws on. /mcp is judged by its JSON-RPC
+// method rather than its path: a liveness poller sending only initialize or
+// tools/list does no engine work, while tools/call does.
+func classify(r *http.Request) costClass {
+	if r.URL.Path == "/mcp" {
+		if invokesTool(r) {
+			return classWork
+		}
+		return classFree
+	}
+	if engineRoutes[r.URL.Path] {
+		return classWork
+	}
+	return classFree
+}
+
+// maxRPCPeek bounds how much of an /mcp body is buffered to classify it. A
+// JSON-RPC envelope names its method within the first few hundred bytes;
+// capping the peek stops a large or hostile body being read into memory
+// just to decide what to charge for it.
+const maxRPCPeek = 4 << 10
+
+// invokesTool reports whether an /mcp request actually calls a tool. It
+// buffers a bounded prefix and restores the body, so the MCP handler
+// downstream still reads a complete request.
+//
+// It fails CLOSED - charging as work - in every uncertain case: a read
+// error, or a body longer than the peek in which no tool call was seen.
+// Without that, an attacker could push the method field past the peek
+// window behind a huge params object and buy unlimited free tool calls.
+// Over-charging a cheap request is harmless; under-charging an expensive
+// one is the whole vulnerability.
+func invokesTool(r *http.Request) bool {
+	if r.Body == nil {
+		return false
+	}
+	prefix, err := io.ReadAll(io.LimitReader(r.Body, maxRPCPeek+1))
+	if err != nil {
+		return true
+	}
+	r.Body = restoredBody{Reader: io.MultiReader(bytes.NewReader(prefix), r.Body), Closer: r.Body}
+
+	if bytes.Contains(prefix, []byte("tools/call")) {
+		return true
+	}
+	return len(prefix) > maxRPCPeek // truncated and undecided - charge it
+}
+
+// restoredBody re-serves the bytes already consumed for classification,
+// then the remainder of the original body, while still closing the original.
+type restoredBody struct {
+	io.Reader
+	io.Closer
+}
+
+// budgets holds the two independent caps. The work budget is the documented
+// study allowance, now charged only for requests that reach the engine. The
+// flood guard exists solely to stop someone hammering cheap endpoints and is
+// deliberately loose enough that a genuine UI session never trips it.
+type budgets struct {
+	work  *rateLimiter
+	flood *rateLimiter
+}
+
+func newBudgets() *budgets {
+	return &budgets{
+		work:  newRateLimiter(ipWorkLimit, ipWorkWindow, globalWorkLimit, globalWorkWindow),
+		flood: newRateLimiter(ipFloodLimit, ipFloodWindow, globalFloodLimit, globalFloodWindow),
+	}
+}
+
+// middleware charges every request against the flood guard, and only
+// engine-touching requests against the study budget.
+func (b *budgets) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ok, reason := b.flood.allow(r); !ok {
+			rateLimited(w, reason)
+			return
+		}
+		if classify(r) == classWork {
+			if ok, reason := b.work.allow(r); !ok {
+				rateLimited(w, reason+" - this public instance is cost-bounded; "+
+					"run the CLI or desktop build locally for unbounded study")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // securityHeaders adds headers appropriate for a publicly-reachable,

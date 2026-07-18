@@ -1,8 +1,10 @@
 package engine_test
 
 import (
+	"errors"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jrainsberger/orthotomeo/books"
@@ -74,6 +76,130 @@ func buildFixture(t *testing.T) string {
 		t.Fatalf("close build handle: %v", err)
 	}
 	return path
+}
+
+// buildCeilingFixture writes a DB holding exactly n TAGNT occurrences of one
+// lemma, so the concordance ceiling can be walked across its boundary
+// precisely. Kept separate from buildFixture so raising n here can never
+// shift a count another test asserts on.
+func buildCeilingFixture(t *testing.T, n int) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ceiling.db")
+	db, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("build open: %v", err)
+	}
+	if err := store.ApplySchema(db); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	if _, err := sources.Seed(db); err != nil {
+		t.Fatalf("seed sources: %v", err)
+	}
+	if _, _, err := books.Seed(db); err != nil {
+		t.Fatalf("seed books: %v", err)
+	}
+	var matBook int64
+	if err := db.QueryRow(`SELECT id FROM books WHERE code = 'MAT'`).Scan(&matBook); err != nil {
+		t.Fatalf("book lookup: %v", err)
+	}
+	for i := 1; i <= n; i++ {
+		res, err := db.Exec(`INSERT INTO verses (versification, book_id, chapter, verse) VALUES ('canonical', ?, 1, ?)`, matBook, i)
+		if err != nil {
+			t.Fatalf("insert verse %d: %v", i, err)
+		}
+		verseID, err := res.LastInsertId()
+		if err != nil {
+			t.Fatalf("last insert id %d: %v", i, err)
+		}
+		if _, err := db.Exec(`
+			INSERT INTO words (verse_id, source_id, word_no, surface, lemma, dstrong, morph_code, attestation, editions, source_locator)
+			VALUES (?, (SELECT id FROM sources WHERE code = 'TAGNT'), 1, 'εἰς', 'εἰς', 'G1519', 'PREP', 'NKO', 'NA28', ?)`,
+			verseID, "Mat.1."+strconv.Itoa(i)+"#1"); err != nil {
+			t.Fatalf("insert word %d: %v", i, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close build handle: %v", err)
+	}
+	return path
+}
+
+// The ceiling is deployment policy fixed at Open, so these walk its boundary
+// exactly: 5 occurrences against limits either side of 5. The refusal has to
+// be a named, branchable error reporting the real count, so a caller can tell
+// "too big, here's how big" apart from "no matches".
+func TestConcordLemmaRefusesResultSetOverCeiling(t *testing.T) {
+	cases := []struct {
+		name    string
+		opts    []engine.Option
+		wantErr bool
+	}{
+		{name: "unbounded by default", opts: nil, wantErr: false},
+		{name: "under the ceiling", opts: []engine.Option{engine.WithMaxResults(10)}, wantErr: false},
+		{name: "exactly at the ceiling", opts: []engine.Option{engine.WithMaxResults(5)}, wantErr: false},
+		{name: "one over the ceiling", opts: []engine.Option{engine.WithMaxResults(4)}, wantErr: true},
+		{name: "zero means unbounded", opts: []engine.Option{engine.WithMaxResults(0)}, wantErr: false},
+		{name: "negative means unbounded", opts: []engine.Option{engine.WithMaxResults(-1)}, wantErr: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, err := engine.Open(buildCeilingFixture(t, 5), tc.opts...)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			defer e.Close()
+
+			cs, err := e.ConcordLemma("εἰς", "TAGNT", "")
+			switch {
+			case tc.wantErr && err == nil:
+				t.Fatalf("ConcordLemma returned %d citations, want ErrResultTooLarge", len(cs))
+			case tc.wantErr:
+				if !errors.Is(err, engine.ErrResultTooLarge) {
+					t.Errorf("error = %v, want ErrResultTooLarge", err)
+				}
+				if !strings.Contains(err.Error(), "5 occurrences") {
+					t.Errorf("error %q does not report the matched count", err)
+				}
+			case err != nil:
+				t.Fatalf("ConcordLemma: %v", err)
+			case len(cs) != 5:
+				t.Errorf("citations = %d, want 5", len(cs))
+			}
+		})
+	}
+}
+
+// ConcordPhrase materializes every occurrence of its anchor token before it
+// walks a single chain, so the anchor scan - not the far smaller set of
+// matched phrases - is the cost the ceiling has to bound.
+func TestConcordPhraseRefusesAnchorScanOverCeiling(t *testing.T) {
+	e, err := engine.Open(buildCeilingFixture(t, 5), engine.WithMaxResults(4))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer e.Close()
+
+	if _, err := e.ConcordPhrase([]string{"εἰς", "ἄφεσις"}, "TAGNT", 0); !errors.Is(err, engine.ErrResultTooLarge) {
+		t.Fatalf("error = %v, want ErrResultTooLarge", err)
+	}
+}
+
+// Count reads numbers, never Citations, so it stays available under any
+// ceiling - it is how a caller learns how big a refused query actually is.
+func TestCountIsNeverBoundedByCeiling(t *testing.T) {
+	e, err := engine.Open(buildCeilingFixture(t, 5), engine.WithMaxResults(1))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer e.Close()
+
+	tally, err := e.Count("εἰς", "TAGNT", "")
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if tally.Total != 5 {
+		t.Errorf("total = %d, want 5", tally.Total)
+	}
 }
 
 func TestEngineReachesEveryPhase5Operation(t *testing.T) {

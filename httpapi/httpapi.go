@@ -20,6 +20,8 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jrainsberger/orthotomeo/engine"
@@ -40,10 +42,14 @@ func New(e *engine.Engine) *Server {
 	return &Server{e: e}
 }
 
-// registerAPIRoutes adds every JSON endpoint (no UI routes) to mux - the
-// part Handler and APIHandler both need, factored out so the two can never
-// drift apart on which JSON routes exist.
+// registerAPIRoutes adds every JSON endpoint (no UI routes) plus the crawler
+// policy to mux - the part Handler and APIHandler both need, factored out so
+// the two can never drift apart on which routes exist. robots.txt lives here
+// rather than beside the UI routes precisely because the public deployment
+// serves APIHandler: registering it with the UI would have left the one
+// surface that is actually crawled without a policy.
 func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /robots.txt", handleRobots)
 	mux.HandleFunc("GET /verse", s.handleVerse)
 	mux.HandleFunc("GET /passage", s.handlePassage)
 	mux.HandleFunc("GET /concord", s.handleConcord)
@@ -59,7 +65,7 @@ func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.registerAPIRoutes(mux)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticFS)))
+	mux.Handle("GET /static/", cacheStatic(http.StripPrefix("/static/", http.FileServerFS(staticFS))))
 	mux.HandleFunc("GET /favicon.ico", handleFavicon)
 	mux.HandleFunc("GET /{$}", handleIndex)
 	return mux
@@ -100,7 +106,24 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	enc.Encode(v)
 }
 
+// writeError renders err as JSON. A refused over-size query is translated
+// here rather than passed through raw: the engine's own text is written for
+// a developer or tool caller ("call Count for the tally alone") and carries
+// internal call-site prefixes, neither of which helps someone who just typed
+// a common word into the search box. The counts also go out as structured
+// fields so a client can act on them without parsing the sentence.
 func writeError(w http.ResponseWriter, status int, err error) {
+	var tooLarge *engine.ResultTooLargeError
+	if errors.As(err, &tooLarge) {
+		writeJSON(w, status, map[string]any{
+			"error": fmt.Sprintf(
+				"that query matches %d occurrences, more than this instance returns at once (limit %d) - narrow it to a more specific lemma, or search a smaller range.",
+				tooLarge.Matched, tooLarge.Limit),
+			"matched": tooLarge.Matched,
+			"limit":   tooLarge.Limit,
+		})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 

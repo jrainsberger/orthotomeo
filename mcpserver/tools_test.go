@@ -83,9 +83,9 @@ func buildFixture(t *testing.T) string {
 // startTestServer wires a real server (this package's RegisterTools) to a
 // real client over the SDK's in-memory transport pair - a genuine MCP
 // session, not a bypassed direct function call.
-func startTestServer(t *testing.T, dbPath string) *mcp.ClientSession {
+func startTestServer(t *testing.T, dbPath string, opts ...engine.Option) *mcp.ClientSession {
 	t.Helper()
-	e, err := engine.Open(dbPath)
+	e, err := engine.Open(dbPath, opts...)
 	if err != nil {
 		t.Fatalf("engine.Open: %v", err)
 	}
@@ -137,6 +137,52 @@ func callTool[Out any](t *testing.T, session *mcp.ClientSession, name string, ar
 		t.Fatalf("unmarshal %s result %q: %v", name, text.Text, err)
 	}
 	return out
+}
+
+// toolDescriptions reads the descriptions a real client actually receives
+// over ListTools, so these assertions test the advertised surface rather
+// than the struct literal we happened to write.
+func toolDescriptions(t *testing.T, session *mcp.ClientSession) map[string]string {
+	t.Helper()
+	res, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	out := map[string]string{}
+	for _, tool := range res.Tools {
+		out[tool.Name] = tool.Description
+	}
+	return out
+}
+
+// TestConcordToolDescriptionsMatchTheEnginesRealCeiling proves the
+// advertised description is generated from the engine's actual limit rather
+// than hard-coded: a bounded server must state the number, and an unbounded
+// one must not advertise a cap it does not enforce. A tool description that
+// misreports its own tool is precisely the unchecked claim this project
+// exists to avoid - and the number is there so a model narrows a broad query
+// up front instead of discovering the bound by failing.
+func TestConcordToolDescriptionsMatchTheEnginesRealCeiling(t *testing.T) {
+	path := buildFixture(t)
+	concordTools := []string{"concord_lemma", "concord_phrase"}
+
+	t.Run("bounded engine states the cap", func(t *testing.T) {
+		descs := toolDescriptions(t, startTestServer(t, path, engine.WithMaxResults(2000)))
+		for _, name := range concordTools {
+			if !strings.Contains(descs[name], "caps one concordance result at 2000 occurrences") {
+				t.Errorf("%s does not state the ceiling: %q", name, descs[name])
+			}
+		}
+	})
+
+	t.Run("unbounded engine advertises no cap", func(t *testing.T) {
+		descs := toolDescriptions(t, startTestServer(t, path))
+		for _, name := range concordTools {
+			if strings.Contains(descs[name], "caps one concordance result") {
+				t.Errorf("%s advertises a cap the engine does not enforce: %q", name, descs[name])
+			}
+		}
+	})
 }
 
 func TestConcordLemmaOverMCP(t *testing.T) {

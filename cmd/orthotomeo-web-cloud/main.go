@@ -87,7 +87,15 @@ func main() {
 		port = defaultPort
 	}
 
-	e, err := engine.Open(dbPath)
+	// Bound concordance result size for the public instance. The rate
+	// limiter bounds how OFTEN a caller can ask; this bounds how EXPENSIVE
+	// any single ask may be - without it, one unauthenticated request for a
+	// common lemma (TAGNT ὁ matches 20705 rows) can allocate tens of
+	// megabytes inside a 256Mi container that serves 20 requests at a time.
+	// Fixed here, at wiring time: the Engine exposes no setter, so nothing
+	// downstream can raise or remove it. A caller who genuinely needs every
+	// occurrence uses the CLI or desktop build, which is unbounded.
+	e, err := engine.Open(dbPath, engine.WithMaxResults(engine.DefaultPublicMaxResults))
 	if err != nil {
 		log.Fatalf("open engine: %v", err)
 	}

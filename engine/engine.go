@@ -8,6 +8,7 @@ package engine
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/jrainsberger/orthotomeo/attestation"
@@ -24,9 +25,49 @@ import (
 )
 
 // Engine holds the one DB connection every method below delegates through.
-// The field is unexported: no transport can reach into it for a *sql.DB.
+// The fields are unexported: no transport can reach into it for a *sql.DB,
+// nor raise the concordance ceiling an operator fixed at Open.
 type Engine struct {
 	db *sql.DB
+	// maxResults bounds ConcordLemma/ConcordPhrase. Set once by Open from
+	// an Option and never mutated afterwards - see Option's doc comment for
+	// why there is deliberately no setter.
+	maxResults int
+}
+
+// ErrResultTooLarge means a concordance query's complete result set is
+// larger than this Engine's ceiling, so it was refused outright rather than
+// materialized. This is complete-or-fail taking its fail branch, not an
+// exception to invariant #3: the contract is "the whole set or an error,
+// never a silent partial", and this is the error - reporting the real
+// occurrence count so a caller can narrow the query or call Count instead.
+var ErrResultTooLarge = errors.New("engine: result set exceeds this engine's limit")
+
+// DefaultPublicMaxResults is the ceiling a publicly-reachable deployment
+// should run with. At roughly half a kilobyte per rendered Citation, 2000
+// rows is about a megabyte of response - comfortable for the 256Mi cloud
+// container even at full request concurrency. Unbounded, the only ceiling is
+// the corpus itself: the commonest TAGNT lemma (ὁ) matches 20705 rows, tens
+// of megabytes once expanded into Citations, so a single unauthenticated
+// request could exhaust the container.
+const DefaultPublicMaxResults = 2000
+
+// Option configures an Engine at construction. Options exist so a limit is
+// fixed once, at wiring time, by the binary that owns the deployment: there
+// is deliberately no setter and no exported field, so nothing downstream of
+// Open - transport, handler, or request - can raise or remove a ceiling the
+// operator set. Making the unsafe thing structurally impossible rather than
+// merely discouraged is the point.
+type Option func(*Engine)
+
+// WithMaxResults caps how many rows ConcordLemma and ConcordPhrase will
+// materialize in one call; a query matching more is refused with
+// ErrResultTooLarge before any row is read. n <= 0 means unbounded, which is
+// the default and the right setting for a local CLI or desktop process that
+// owns its own memory. A public entrypoint should pass
+// DefaultPublicMaxResults.
+func WithMaxResults(n int) Option {
+	return func(e *Engine) { e.maxResults = n }
 }
 
 // Open opens the built DB at dbPath READ-ONLY, in two independent layers:
@@ -35,7 +76,9 @@ type Engine struct {
 // statement-level guard - either alone would already stop a write
 // (defense in depth, not redundancy for its own sake). dbPath must already
 // exist (cmd/build produces it); Open never creates or migrates a schema.
-func Open(dbPath string) (*Engine, error) {
+// opts are applied once, here, and are the only way to configure an Engine
+// (see Option) - by default it is unbounded, suited to a local process.
+func Open(dbPath string, opts ...Option) (*Engine, error) {
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", dbPath, err)
@@ -61,7 +104,11 @@ func Open(dbPath string) (*Engine, error) {
 				"delete it and rebuild via cmd/build (see README.md)",
 			dbPath, version, store.SchemaVersion)
 	}
-	return &Engine{db: db}, nil
+	e := &Engine{db: db}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e, nil
 }
 
 // Close releases the underlying connection.
@@ -104,6 +151,9 @@ func (e *Engine) GetPassage(rr retriever.RefRange, editions []string) ([]retriev
 // "dstrong", "surface"), or "" for the original auto-detect (dStrong shape,
 // else lemma) - complete or an error.
 func (e *Engine) ConcordLemma(query, corpus, by string) ([]retriever.Citation, error) {
+	if err := e.checkResultLimit("ConcordLemma", query, corpus, by); err != nil {
+		return nil, err
+	}
 	return concord.ConcordLemma(e.db, query, corpus, by)
 }
 
@@ -111,6 +161,16 @@ func (e *Engine) ConcordLemma(query, corpus, by string) ([]retriever.Citation, e
 // appearing in order with at most window intervening words between each
 // consecutive pair (window=0 = strictly adjacent).
 func (e *Engine) ConcordPhrase(tokens []string, corpus string, window int) ([]retriever.Citation, error) {
+	// The anchor scan is ConcordPhrase's real memory cost: it materializes
+	// every occurrence of tokens[0] before walking a single chain, so that
+	// is what the ceiling has to bound - the matched phrases are usually far
+	// fewer. Token-count validation stays in concord, so an empty slice
+	// falls through to its own error rather than panicking here.
+	if len(tokens) > 0 {
+		if err := e.checkResultLimit("ConcordPhrase anchor scan", tokens[0], corpus, "lemma"); err != nil {
+			return nil, err
+		}
+	}
 	return concord.ConcordPhrase(e.db, tokens, corpus, window)
 }
 
@@ -118,6 +178,27 @@ func (e *Engine) ConcordPhrase(tokens []string, corpus string, window int) ([]re
 // match - Count(q, c, by).Total == len(ConcordLemma(q, c, by)) always.
 func (e *Engine) Count(query, corpus, by string) (concord.Tally, error) {
 	return concord.Count(e.db, query, corpus, by)
+}
+
+// checkResultLimit refuses a query whose complete result set would exceed
+// this Engine's ceiling, before concord materializes a single row. It costs
+// one extra indexed COUNT(*) and runs only when a ceiling is configured, so
+// an unbounded (local) Engine pays nothing for it. Count itself is never
+// bounded - it reads numbers, not Citations, so it stays the way a caller
+// finds out how big a refused query actually is.
+func (e *Engine) checkResultLimit(op, query, corpus, by string) error {
+	if e.maxResults <= 0 {
+		return nil
+	}
+	tally, err := concord.Count(e.db, query, corpus, by)
+	if err != nil {
+		return err
+	}
+	if tally.Total <= e.maxResults {
+		return nil
+	}
+	return fmt.Errorf("%s: %w - query matches %d occurrences, limit is %d; narrow the query, or call Count for the tally alone",
+		op, ErrResultTooLarge, tally.Total, e.maxResults)
 }
 
 // --- T17: parse / lemmatize ---

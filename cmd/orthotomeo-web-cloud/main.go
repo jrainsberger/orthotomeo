@@ -38,10 +38,23 @@ const (
 
 	requestTimeout = 10 * time.Second
 
-	ipRateLimit      = 60 // requests per IP
-	ipRateWindow     = time.Hour
-	globalRateLimit  = 2000 // requests, all sources combined - the hard cost ceiling
-	globalRateWindow = 24 * time.Hour
+	// The study budget: charged only for requests that reach the engine
+	// (see classify). The numbers are unchanged - what changed is that a
+	// liveness ping, a page load, or a 404 probe no longer spends them.
+	ipWorkLimit      = 60 // engine queries per IP
+	ipWorkWindow     = time.Hour
+	globalWorkLimit  = 2000 // engine queries, all sources - the hard cost ceiling
+	globalWorkWindow = 24 * time.Hour
+
+	// The flood guard: every request, including the free ones (static
+	// assets, index, favicon, robots.txt, MCP handshakes, probes). Its only
+	// job is to stop someone hammering cheap endpoints, so it is sized well
+	// above real use - one UI page load is roughly six requests, so 600/hr
+	// leaves room for ~100 page loads an hour from a single visitor.
+	ipFloodLimit      = 600
+	ipFloodWindow     = time.Hour
+	globalFloodLimit  = 50000 // current real traffic is ~2,700/day
+	globalFloodWindow = 24 * time.Hour
 )
 
 // newHandler builds the full routed, middleware-wrapped handler: /mcp
@@ -75,7 +88,7 @@ func newHandler(e *engine.Engine) http.Handler {
 
 	handler := gzipMiddleware(http.Handler(mux))
 	handler = http.TimeoutHandler(handler, requestTimeout, `{"error":"request timed out"}`)
-	handler = newRateLimiter(ipRateLimit, ipRateWindow, globalRateLimit, globalRateWindow).middleware(handler)
+	handler = newBudgets().middleware(handler)
 	handler = securityHeaders(handler)
 	handler = loggingMiddleware(handler)
 	return handler

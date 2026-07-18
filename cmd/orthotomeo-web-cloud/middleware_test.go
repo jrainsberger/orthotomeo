@@ -5,9 +5,129 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+// newTestBudgets gives a deliberately tiny work allowance and a roomy flood
+// guard, so a case can prove what does and does not spend the study budget
+// without accidentally tripping the other cap.
+func newTestBudgets(workPerIP int) *budgets {
+	return &budgets{
+		work:  newRateLimiter(workPerIP, time.Hour, 1000, 24*time.Hour),
+		flood: newRateLimiter(1000, time.Hour, 10000, 24*time.Hour),
+	}
+}
+
+func budgetOK() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+}
+
+func budgetGet(path string) *http.Request {
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	r.RemoteAddr = "1.2.3.4:5555"
+	return r
+}
+
+func budgetPost(path, body string) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	r.RemoteAddr = "1.2.3.4:5555"
+	return r
+}
+
+// The core guarantee of the two-budget split: page loads, assets, probes and
+// autocomplete data must not spend the study allowance. Before the split, a
+// single UI page load (roughly six requests) could burn a tenth of a
+// visitor's hourly query budget before they searched for anything.
+func TestFreeRequestsDoNotSpendTheWorkBudget(t *testing.T) {
+	handler := newTestBudgets(1).middleware(budgetOK())
+
+	for _, path := range []string{"/", "/static/app.js", "/favicon.ico", "/robots.txt", "/books", "/no-such-path"} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, budgetGet(path))
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s: status %d, want 200 - free routes must not be charged", path, w.Code)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, budgetGet("/verse"))
+	if w.Code != http.StatusOK {
+		t.Errorf("GET /verse after six free requests: status %d, want 200 - free traffic spent the work budget", w.Code)
+	}
+}
+
+func TestWorkRequestsSpendTheWorkBudget(t *testing.T) {
+	handler := newTestBudgets(1).middleware(budgetOK())
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, budgetGet("/concord"))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first /concord: status %d, want 200", first.Code)
+	}
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, budgetGet("/concord"))
+	if second.Code != http.StatusTooManyRequests {
+		t.Errorf("second /concord: status %d, want 429", second.Code)
+	}
+}
+
+// /mcp is charged by JSON-RPC method, not by path: the liveness poller that
+// sends ~780 initialize handshakes a day does no engine work and must not
+// consume the tool budget, while tools/call must.
+func TestClassifyMCPByMethod(t *testing.T) {
+	cases := []struct {
+		name     string
+		body     string
+		wantWork bool
+	}{
+		{name: "initialize is free", body: `{"jsonrpc":"2.0","id":1,"method":"initialize"}`},
+		{name: "tools/list is free", body: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`},
+		{name: "notification is free", body: `{"jsonrpc":"2.0","method":"notifications/initialized"}`},
+		{name: "tools/call is work", body: `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"count"}}`, wantWork: true},
+		{name: "batch containing a tool call is work", body: `[{"jsonrpc":"2.0","id":1,"method":"tools/call"}]`, wantWork: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classify(budgetPost("/mcp", tc.body)) == classWork; got != tc.wantWork {
+				t.Errorf("charged as work = %v, want %v", got, tc.wantWork)
+			}
+		})
+	}
+}
+
+// Classification peeks at the /mcp body, so the handler behind it must still
+// read every byte - otherwise classification would silently break every tool
+// call it inspected.
+func TestMCPBodySurvivesClassification(t *testing.T) {
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"count","arguments":{"query":"G0859"}}}`
+	var seen string
+	handler := newTestBudgets(10).middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		seen = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), budgetPost("/mcp", body))
+
+	if seen != body {
+		t.Errorf("handler read %q, want the complete original body %q", seen, body)
+	}
+}
+
+// An /mcp body larger than the peek window, with no tool call visible in the
+// prefix, is charged as work. Without failing closed here an attacker could
+// push "method" past the window behind a huge params object and buy
+// unlimited free tool calls.
+func TestOversizedMCPBodyFailsClosed(t *testing.T) {
+	padded := `{"padding":"` + strings.Repeat("x", maxRPCPeek+100) + `","method":"initialize"}`
+	if classify(budgetPost("/mcp", padded)) != classWork {
+		t.Error("an oversized, undecidable /mcp body must be charged as work")
+	}
+}
 
 func TestClientIP(t *testing.T) {
 	tests := []struct {

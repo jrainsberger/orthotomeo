@@ -297,9 +297,16 @@ The exact config shape (a `url` field vs. a `command`/`args` pair) depends
 on your MCP client - check its docs for "remote MCP server" or "Streamable
 HTTP" support. Same twelve tools as the stdio server above; this is in fact
 this project's primary reason for having a cloud deployment at all. It's a
-public, unauthenticated, cost-bounded instance - rate-limited to 60
-requests/hour per IP and 2,000/day total, and a single concordance result is
-capped at 2,000 occurrences.
+public, unauthenticated, cost-bounded instance - rate-limited to 60 *engine
+queries* per hour per IP and 2,000/day total, and a single concordance result
+is capped at 2,000 occurrences.
+
+Only requests that actually reach the engine draw on that budget: a tool call,
+or one of the REST query endpoints. Page loads, static assets, `/books`
+autocomplete data, MCP handshakes (`initialize`, `tools/list`) and 404 probes
+are free, and sit behind a separate, much looser flood guard instead. The
+budget is meant for study, so a liveness poller or a browser fetching CSS
+should never be able to spend it.
 
 Those two bounds do different jobs: the rate limit caps how *often* you can
 ask, the result cap caps how *expensive* one ask can be. A query matching more

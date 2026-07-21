@@ -94,9 +94,12 @@ const (
 	RelationDivide   = "divide"
 )
 
-// Confidence assigned to a clean positional pairing that wasn't confirmed
+// Confidence ceiling for a clean positional pairing that wasn't confirmed
 // by an identical (chapter,verse) label - lower than an anchor's certainty,
-// since it rests on count-based position alone.
+// since it rests on count-based position alone. It is a ceiling, not a flat
+// value: classify caps it (and every other relation's confidence) by the
+// opConfidence of the chapter-level operation that produced the pairing (the
+// weakest-link rule; see producedGroup and classify).
 const renumberConfidence = 0.85
 
 type verseRow struct {
@@ -163,8 +166,9 @@ func Align(db *sql.DB, versification, sourceCode string) (Counts, error) {
 		}
 
 		groups := alignBook(canonical, edition)
-		for _, g := range groups {
-			relation, confidence := classify(canonical, edition, g)
+		for _, pg := range groups {
+			g := pg.g
+			relation, confidence := classify(canonical, edition, pg)
 			switch {
 			case relation == "":
 				if len(g.AIdx) == 0 {
@@ -218,20 +222,34 @@ func insertPair(stmt *sql.Stmt, canonicalID, editionID int64, relation string, g
 	return nil
 }
 
-// classify determines the relation+confidence for a Group. Returns
+// classify determines the relation+confidence for a producedGroup. Returns
 // relation=="" for a pure insertion/deletion, which gets no row.
-func classify(canonical, edition []verseRow, g align.Group) (relation string, confidence float64) {
+//
+// Every non-empty relation's confidence is capped by pg.opConfidence, the
+// size-agreement of the chapter-level operation that produced this pairing
+// (the weakest-link rule): a verse pairing can be no more certain than the
+// chapter operation it sits inside. This is what keeps a renumber leaf that
+// was position-allocated inside a size-mismatched chapter merge/divide (eg
+// Jeremiah's displaced-block region) from claiming the same confidence as a
+// renumber from a clean, equal-size 1:1 chapter substitution (eg the Psalms
+// or Joel boundary shift, where opConfidence is 1.0 and nothing is capped).
+// The cap is purely count-derived - no hand-curation, no per-book table
+// (invariant #9). A renumber born from an equal-size *coincidental*
+// substitution still reports the full ceiling; distinguishing that case
+// needs book-level reorder knowledge the verse counts don't carry.
+func classify(canonical, edition []verseRow, pg producedGroup) (relation string, confidence float64) {
+	g := pg.g
 	switch {
 	case len(g.AIdx) == 1 && len(g.BIdx) == 1:
 		c, e := canonical[g.AIdx[0]], edition[g.BIdx[0]]
 		if c.chapter == e.chapter && c.verse == e.verse {
-			return RelationExact, 1.0
+			return RelationExact, minFloat(1.0, pg.opConfidence)
 		}
-		return RelationRenumber, renumberConfidence
+		return RelationRenumber, minFloat(renumberConfidence, pg.opConfidence)
 	case len(g.AIdx) > 1:
-		return RelationMerge, 1.0 / float64(len(g.AIdx))
+		return RelationMerge, minFloat(1.0/float64(len(g.AIdx)), pg.opConfidence)
 	case len(g.BIdx) > 1:
-		return RelationDivide, 1.0 / float64(len(g.BIdx))
+		return RelationDivide, minFloat(1.0/float64(len(g.BIdx)), pg.opConfidence)
 	default:
 		return "", 0
 	}
@@ -264,7 +282,7 @@ func classify(canonical, edition []verseRow, g align.Group) (relation string, co
 // differing from the Hebrew/KJV spine) is the expected, useful output of
 // this aligner, per the Concord spec - the goal is to surface it
 // accurately as renumber/merge/divide, not manufacture false agreement.
-func alignBook(canonical, edition []verseRow) []align.Group {
+func alignBook(canonical, edition []verseRow) []producedGroup {
 	canonChapters := chapterSpans(canonical)
 	editChapters := chapterSpans(edition)
 
@@ -279,31 +297,82 @@ func alignBook(canonical, edition []verseRow) []align.Group {
 
 	ops := align.AlignWeighted(aWeights, bWeights)
 
-	var groups []align.Group
+	var groups []producedGroup
 	for _, op := range ops {
 		switch op.Kind {
 		case align.OpDelete:
 			span := canonChapters[op.AIdx[0]]
-			groups = append(groups, align.FillGap(indexRange(span.start, span.end), nil)...)
+			// Pure deletion: single-sided groups, no confidence consumed.
+			groups = tag(groups, align.FillGap(indexRange(span.start, span.end), nil), 1.0)
 		case align.OpInsert:
 			span := editChapters[op.BIdx[0]]
-			groups = append(groups, align.FillGap(nil, indexRange(span.start, span.end))...)
+			groups = tag(groups, align.FillGap(nil, indexRange(span.start, span.end)), 1.0)
 		case align.OpSubstitute:
 			cSpan, eSpan := canonChapters[op.AIdx[0]], editChapters[op.BIdx[0]]
-			groups = append(groups, align.FillGap(indexRange(cSpan.start, cSpan.end), indexRange(eSpan.start, eSpan.end))...)
+			conf := sizeReliability(cSpan.end-cSpan.start, eSpan.end-eSpan.start)
+			groups = tag(groups, align.FillGap(indexRange(cSpan.start, cSpan.end), indexRange(eSpan.start, eSpan.end)), conf)
 		case align.OpMerge:
 			c1, c2 := canonChapters[op.AIdx[0]], canonChapters[op.AIdx[1]]
 			eSpan := editChapters[op.BIdx[0]]
+			conf := sizeReliability((c1.end-c1.start)+(c2.end-c2.start), eSpan.end-eSpan.start)
 			partitions := [][]int{indexRange(c1.start, c1.end), indexRange(c2.start, c2.end)}
-			groups = append(groups, proportionalSplit(partitions, indexRange(eSpan.start, eSpan.end))...)
+			groups = tag(groups, proportionalSplit(partitions, indexRange(eSpan.start, eSpan.end)), conf)
 		case align.OpDivide:
 			cSpan := canonChapters[op.AIdx[0]]
 			e1, e2 := editChapters[op.BIdx[0]], editChapters[op.BIdx[1]]
+			conf := sizeReliability(cSpan.end-cSpan.start, (e1.end-e1.start)+(e2.end-e2.start))
 			partitions := [][]int{indexRange(e1.start, e1.end), indexRange(e2.start, e2.end)}
-			groups = append(groups, swapGroups(proportionalSplit(partitions, indexRange(cSpan.start, cSpan.end)))...)
+			groups = tag(groups, swapGroups(proportionalSplit(partitions, indexRange(cSpan.start, cSpan.end))), conf)
 		}
 	}
 	return groups
+}
+
+// producedGroup pairs an align.Group with opConfidence: the confidence
+// ceiling imposed by the chapter-level operation that produced it. A verse
+// pairing can be no more certain than the chapter operation it sits inside
+// (the weakest-link rule). opConfidence is 1.0 for a size-matched chapter
+// substitution and drops toward 0 as the operation's verse-count mismatch
+// grows; classify caps each leaf's confidence by it.
+type producedGroup struct {
+	g            align.Group
+	opConfidence float64
+}
+
+// tag wraps each align.Group produced by one chapter-level operation with
+// that operation's opConfidence, appending to dst.
+func tag(dst []producedGroup, gs []align.Group, opConfidence float64) []producedGroup {
+	for _, g := range gs {
+		dst = append(dst, producedGroup{g: g, opConfidence: opConfidence})
+	}
+	return dst
+}
+
+// sizeReliability scores how well two chapter-region verse counts agree, in
+// [0,1]: 1.0 for an exact match (the strongest positional signal), falling
+// linearly toward 0 as the mismatch approaches the larger side's whole size.
+// Purely count-derived - the same signal AlignWeighted minimized, reused
+// here to bound how much a downstream verse pairing may claim.
+func sizeReliability(aWeight, bWeight int) float64 {
+	hi := aWeight
+	if bWeight > hi {
+		hi = bWeight
+	}
+	if hi == 0 {
+		return 1.0
+	}
+	diff := aWeight - bWeight
+	if diff < 0 {
+		diff = -diff
+	}
+	return 1.0 - float64(diff)/float64(hi)
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // proportionalSplit splits otherSide proportionally across each partition

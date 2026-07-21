@@ -379,6 +379,108 @@ func TestAlignAvoidsLeadingTitleInsertionFalseExact(t *testing.T) {
 	}
 }
 
+// TestAlignCleanRenumberKeepsFullConfidence pins the "no false alarm" side
+// of the weakest-link cap: a renumber born from a clean, equal-size 1:1
+// chapter substitution (the Joel boundary shift) has opConfidence 1.0, so
+// its confidence is NOT capped - it stays at the renumber ceiling (0.85).
+// This is the case the cap must leave alone.
+func TestAlignCleanRenumberKeepsFullConfidence(t *testing.T) {
+	db := setup(t)
+	const kjv = `{"books":[{"name":"Joel","chapters":[
+		{"chapter":1,"verses":[{"verse":1},{"verse":2},{"verse":3}]},
+		{"chapter":2,"verses":[{"verse":1},{"verse":2}]}
+	]}]}`
+	if _, err := verses.BuildSpine(db, strings.NewReader(kjv)); err != nil {
+		t.Fatalf("build spine: %v", err)
+	}
+	putEditionVerses(t, db, "Joel", [][2]int{{1, 1}, {1, 2}, {1, 3}, {3, 1}, {3, 2}})
+
+	if _, err := versealign.Align(db, testVersification, testSourceCode); err != nil {
+		t.Fatalf("align: %v", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT va.confidence FROM verse_alignment va
+		JOIN verses cv ON cv.id = va.canonical_verse_id
+		JOIN books b ON b.id = cv.book_id
+		WHERE b.full_name = 'Joel' AND va.relation = 'renumber'`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	var n int
+	for rows.Next() {
+		var conf float64
+		if err := rows.Scan(&conf); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		n++
+		if conf != 0.85 {
+			t.Errorf("clean-shift renumber confidence = %v, want 0.85 (equal-size chapter substitution, nothing to cap)", conf)
+		}
+	}
+	if n != 2 {
+		t.Fatalf("got %d renumber rows, want 2", n)
+	}
+}
+
+// TestAlignRenumberInMismatchedRegionIsCapped pins the "catch the real
+// problem" side: a renumber whose position was allocated inside a size-
+// mismatched chapter-level merge (the shape of Jeremiah's displaced block)
+// must NOT keep the full 0.85 ceiling - it is capped by the merge's
+// size-agreement.
+//
+// Canonical Jude 9 (2 verses, labelled 5/6 so nothing coincidentally
+// anchors) and Jude 10 (2 verses) merge into edition Jude 1 (5 verses):
+// AlignWeighted picks the 2:1 chapter merge (cost 1) over any 1:1 threading.
+// sizeReliability(4, 5) = 1 - 1/5 = 0.8, so every leaf under this merge -
+// including the 1:1 renumber pairings the proportional split leaves behind -
+// is capped at 0.8, below the 0.85 ceiling. The count-derived cap is exactly
+// the honesty fix: the pairing is real and flagged, but no longer claims the
+// certainty of a clean relabel.
+func TestAlignRenumberInMismatchedRegionIsCapped(t *testing.T) {
+	db := setup(t)
+	const kjv = `{"books":[{"name":"Jude","chapters":[
+		{"chapter":9,"verses":[{"verse":5},{"verse":6}]},
+		{"chapter":10,"verses":[{"verse":1},{"verse":2}]}
+	]}]}`
+	if _, err := verses.BuildSpine(db, strings.NewReader(kjv)); err != nil {
+		t.Fatalf("build spine: %v", err)
+	}
+	putEditionVerses(t, db, "Jude", [][2]int{{1, 1}, {1, 2}, {1, 3}, {1, 4}, {1, 5}})
+
+	if _, err := versealign.Align(db, testVersification, testSourceCode); err != nil {
+		t.Fatalf("align: %v", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT va.confidence FROM verse_alignment va
+		JOIN verses cv ON cv.id = va.canonical_verse_id
+		JOIN books b ON b.id = cv.book_id
+		WHERE b.full_name = 'Jude' AND va.relation = 'renumber'`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	var n int
+	for rows.Next() {
+		var conf float64
+		if err := rows.Scan(&conf); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		n++
+		if conf >= 0.85 {
+			t.Errorf("mismatched-region renumber confidence = %v, want < 0.85 (capped by the merge's size-agreement)", conf)
+		}
+		if conf != 0.8 {
+			t.Errorf("renumber confidence = %v, want 0.8 (sizeReliability(4,5))", conf)
+		}
+	}
+	if n == 0 {
+		t.Fatal("expected at least one renumber row in the mismatched merge region, got none")
+	}
+}
+
 func TestAlignIsDeterministic(t *testing.T) {
 	db1 := setup(t)
 	db2 := setup(t)

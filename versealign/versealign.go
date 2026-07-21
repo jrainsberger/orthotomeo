@@ -84,6 +84,7 @@ import (
 	"fmt"
 
 	"github.com/jrainsberger/orthotomeo/align"
+	"github.com/jrainsberger/orthotomeo/recension"
 )
 
 // Relation values for verse_alignment.relation.
@@ -118,6 +119,7 @@ type Counts struct {
 	Exact, Renumber, Merge, Divide int
 	UnalignedCanonical             int // canonical verses with no row in this edition (eg shorter LXX Jeremiah)
 	UnalignedEdition               int // edition verses with no row (eg Psalm 151, Esther/Daniel's Greek additions)
+	RecensionSuppressed            int // canonical verses in a recension-divergent book's reordered span, deliberately left unaligned (eg Jeremiah 25-51 vs the LXX)
 }
 
 // Align computes and inserts verse_alignment rows between the canonical
@@ -165,7 +167,14 @@ func Align(db *sql.DB, versification, sourceCode string) (Counts, error) {
 			return Counts{}, err
 		}
 
-		groups := alignBook(canonical, edition)
+		bookCode, err := bookUSFMCode(tx, bookID)
+		if err != nil {
+			return Counts{}, err
+		}
+		suppressDivergent := recension.IsDivergent(bookCode, sourceCode)
+
+		groups, suppressed := alignBook(canonical, edition, suppressDivergent)
+		counts.RecensionSuppressed += suppressed
 		for _, pg := range groups {
 			g := pg.g
 			relation, confidence := classify(canonical, edition, pg)
@@ -282,7 +291,17 @@ func classify(canonical, edition []verseRow, pg producedGroup) (relation string,
 // differing from the Hebrew/KJV spine) is the expected, useful output of
 // this aligner, per the Concord spec - the goal is to surface it
 // accurately as renumber/merge/divide, not manufacture false agreement.
-func alignBook(canonical, edition []verseRow) []producedGroup {
+// alignBook returns the verse-alignment groups for one book. When
+// suppressDivergent is set (a recension-divergent book, eg Jeremiah vs the
+// LXX), the groups whose canonical chapter falls in the reordered span are
+// dropped rather than emitted: the count-based aligner cannot recover the
+// true correspondence across a moved block, so it refuses to assert one
+// there instead of manufacturing a confident-looking wrong mapping. The
+// second return value is the number of canonical verses so suppressed. The
+// span is derived mechanically from the alignment's own structural operations
+// (see structuralCanonicalSpan); the clean head and tail where numbering runs
+// parallel (eg Jeremiah 1-24 and 52) keep their alignment.
+func alignBook(canonical, edition []verseRow, suppressDivergent bool) ([]producedGroup, int) {
 	canonChapters := chapterSpans(canonical)
 	editChapters := chapterSpans(edition)
 
@@ -325,7 +344,73 @@ func alignBook(canonical, edition []verseRow) []producedGroup {
 			groups = tag(groups, swapGroups(proportionalSplit(partitions, indexRange(cSpan.start, cSpan.end))), conf)
 		}
 	}
-	return groups
+
+	if suppressDivergent {
+		lo, hi, ok := structuralCanonicalSpan(ops, canonChapters, canonical)
+		if ok {
+			return dropCanonicalSpan(groups, canonical, lo, hi)
+		}
+	}
+	return groups, 0
+}
+
+// structuralCanonicalSpan returns the inclusive canonical chapter range
+// spanned by the alignment's structural operations - merge, divide, delete:
+// anything that is not a clean 1:1 substitution. That range is where an
+// edition's numbering stops running parallel to the canonical spine; for a
+// recension-divergent book it bounds the reordered block. Clean 1:1
+// substitutions before the first and after the last structural op (eg
+// Jeremiah 1-24 and 52) are outside it and keep their alignment. ok is false
+// when there are no structural ops at all (nothing to suppress).
+func structuralCanonicalSpan(ops []align.Op, canonChapters []chapterSpan, canonical []verseRow) (lo, hi int, ok bool) {
+	for _, op := range ops {
+		if op.Kind == align.OpSubstitute || op.Kind == align.OpInsert {
+			continue // OpInsert consumes no canonical chapter
+		}
+		for _, ai := range op.AIdx {
+			chap := canonical[canonChapters[ai].start].chapter
+			if !ok {
+				lo, hi, ok = chap, chap, true
+				continue
+			}
+			if chap < lo {
+				lo = chap
+			}
+			if chap > hi {
+				hi = chap
+			}
+		}
+	}
+	return lo, hi, ok
+}
+
+// dropCanonicalSpan removes every group whose canonical verses fall in the
+// inclusive chapter range [lo,hi], returning the kept groups and the count of
+// canonical verses dropped. Groups with no canonical side (edition-only
+// insertions) are never dropped - suppression targets false canonical->edition
+// claims, not genuine LXX-only content.
+func dropCanonicalSpan(groups []producedGroup, canonical []verseRow, lo, hi int) ([]producedGroup, int) {
+	kept := groups[:0:0]
+	suppressed := 0
+	for _, pg := range groups {
+		if len(pg.g.AIdx) > 0 && canonical[pg.g.AIdx[0]].chapter >= lo && canonical[pg.g.AIdx[0]].chapter <= hi {
+			suppressed += len(pg.g.AIdx)
+			continue
+		}
+		kept = append(kept, pg)
+	}
+	return kept, suppressed
+}
+
+// bookUSFMCode looks up a book's canonical USFM code by id (eg "JER") - the
+// key recension.IsDivergent matches on, and the same identifier the retriever
+// carries as Ref.Book.
+func bookUSFMCode(tx *sql.Tx, bookID int64) (string, error) {
+	var code string
+	if err := tx.QueryRow(`SELECT code FROM books WHERE id = ?`, bookID).Scan(&code); err != nil {
+		return "", fmt.Errorf("book code for id %d: %w", bookID, err)
+	}
+	return code, nil
 }
 
 // producedGroup pairs an align.Group with opConfidence: the confidence

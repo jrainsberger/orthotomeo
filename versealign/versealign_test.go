@@ -2,6 +2,7 @@ package versealign_test
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -478,6 +479,113 @@ func TestAlignRenumberInMismatchedRegionIsCapped(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("expected at least one renumber row in the mismatched merge region, got none")
+	}
+}
+
+// jeremiahShapeKJV / jeremiahShapeEdition are a minimal Jeremiah-shaped
+// fixture: a clean head (ch1, equal sizes -> exact), a structural disruption
+// in the middle (ch2+ch3 merge into edition ch2, the shape of the LXX's
+// relocated block), and a clean tail (ch4 -> edition ch3, a renumber). The
+// sizes make the merge unambiguous (cost 0), so the structural span is
+// exactly canonical chapters 2-3.
+const jeremiahShapeKJV = `{"books":[{"name":%q,"chapters":[
+	{"chapter":1,"verses":[{"verse":1},{"verse":2},{"verse":3}]},
+	{"chapter":2,"verses":[{"verse":1},{"verse":2},{"verse":3},{"verse":4},{"verse":5}]},
+	{"chapter":3,"verses":[{"verse":1},{"verse":2},{"verse":3},{"verse":4},{"verse":5}]},
+	{"chapter":4,"verses":[{"verse":1},{"verse":2},{"verse":3}]}
+]}]}`
+
+func jeremiahShapeEdition() [][2]int {
+	return [][2]int{
+		{1, 1}, {1, 2}, {1, 3}, // ch1: 3 verses, matches canonical ch1
+		{2, 1}, {2, 2}, {2, 3}, {2, 4}, {2, 5}, {2, 6}, {2, 7}, {2, 8}, {2, 9}, {2, 10}, // ch2: 10 verses = canonical ch2(5)+ch3(5) merged
+		{3, 1}, {3, 2}, {3, 3}, // ch3: 3 verses = canonical ch4 renumbered
+	}
+}
+
+// TestAlignRecensionDivergentBookSuppressesReorderedSpan pins the T2 behaviour:
+// for a recension-divergent book (Jeremiah vs an LXX source), the aligner
+// refuses to assert a verse correspondence across the reordered span and emits
+// no rows there, while keeping the clean head and tail where numbering runs
+// parallel. Stay honest and get out of the way.
+func TestAlignRecensionDivergentBookSuppressesReorderedSpan(t *testing.T) {
+	db := setup(t)
+	kjv := fmt.Sprintf(jeremiahShapeKJV, "Jeremiah")
+	if _, err := verses.BuildSpine(db, strings.NewReader(kjv)); err != nil {
+		t.Fatalf("build spine: %v", err)
+	}
+	putEditionVerses(t, db, "Jeremiah", jeremiahShapeEdition())
+
+	counts, err := versealign.Align(db, testVersification, testSourceCode)
+	if err != nil {
+		t.Fatalf("align: %v", err)
+	}
+
+	// The reordered span (canonical chapters 2-3, 10 verses) is suppressed.
+	if counts.RecensionSuppressed != 10 {
+		t.Errorf("RecensionSuppressed = %d, want 10 (canonical Jeremiah ch2-3)", counts.RecensionSuppressed)
+	}
+
+	rowsForChapter := func(chapter int) int {
+		var n int
+		err := db.QueryRow(`
+			SELECT COUNT(*) FROM verse_alignment va
+			JOIN verses cv ON cv.id = va.canonical_verse_id
+			JOIN books b ON b.id = cv.book_id
+			WHERE b.full_name = 'Jeremiah' AND cv.chapter = ?`, chapter).Scan(&n)
+		if err != nil {
+			t.Fatalf("count rows for ch%d: %v", chapter, err)
+		}
+		return n
+	}
+
+	// Clean head and tail keep their alignment...
+	if got := rowsForChapter(1); got != 3 {
+		t.Errorf("chapter 1 (clean head) has %d alignment rows, want 3", got)
+	}
+	if got := rowsForChapter(4); got != 3 {
+		t.Errorf("chapter 4 (clean tail) has %d alignment rows, want 3", got)
+	}
+	// ...the reordered span asserts nothing.
+	if got := rowsForChapter(2); got != 0 {
+		t.Errorf("chapter 2 (reordered span) has %d alignment rows, want 0 (suppressed)", got)
+	}
+	if got := rowsForChapter(3); got != 0 {
+		t.Errorf("chapter 3 (reordered span) has %d alignment rows, want 0 (suppressed)", got)
+	}
+}
+
+// TestAlignNonDivergentBookNotSuppressed is the negative control: the identical
+// chapter shape in a book that is NOT recension-divergent (Joel) is aligned
+// normally - the middle becomes a merge, nothing is suppressed. This proves
+// the recension declaration, not the fixture shape, is what triggers T2.
+func TestAlignNonDivergentBookNotSuppressed(t *testing.T) {
+	db := setup(t)
+	kjv := fmt.Sprintf(jeremiahShapeKJV, "Joel")
+	if _, err := verses.BuildSpine(db, strings.NewReader(kjv)); err != nil {
+		t.Fatalf("build spine: %v", err)
+	}
+	putEditionVerses(t, db, "Joel", jeremiahShapeEdition())
+
+	counts, err := versealign.Align(db, testVersification, testSourceCode)
+	if err != nil {
+		t.Fatalf("align: %v", err)
+	}
+	if counts.RecensionSuppressed != 0 {
+		t.Errorf("RecensionSuppressed = %d, want 0 (Joel is not recension-divergent)", counts.RecensionSuppressed)
+	}
+	// The middle is aligned (as a merge), not suppressed: every canonical verse
+	// still has a row somewhere.
+	var total int
+	if err := db.QueryRow(`
+		SELECT COUNT(DISTINCT va.canonical_verse_id) FROM verse_alignment va
+		JOIN verses cv ON cv.id = va.canonical_verse_id
+		JOIN books b ON b.id = cv.book_id
+		WHERE b.full_name = 'Joel'`).Scan(&total); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if total != 16 {
+		t.Errorf("aligned canonical verses = %d, want 16 (all of them - nothing suppressed)", total)
 	}
 }
 

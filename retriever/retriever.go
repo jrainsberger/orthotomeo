@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jrainsberger/orthotomeo/recension"
 	"github.com/jrainsberger/orthotomeo/sources"
 	"github.com/jrainsberger/orthotomeo/verses"
 )
@@ -378,9 +379,23 @@ func alignedAddresses(db *sql.DB, canonicalID int64, ref Ref, info editionInfo) 
 	}
 	if len(addrs) == 0 {
 		addrs = append(addrs, Address{Edition: info.sourceCode, File: file, Exists: false})
-		caveats = append(caveats, fmt.Sprintf("%s: no aligned verse for %s (canonical-only content or an unaligned gap - T4b)", info.sourceCode, ref))
+		caveats = append(caveats, noAlignmentCaveat(info.sourceCode, ref))
 	}
 	return addrs, caveats, nil
+}
+
+// noAlignmentCaveat explains why a canonical verse has no aligned counterpart
+// in an edition. For a recension-divergent book (Jeremiah vs the LXX) it says
+// so specifically - the reordered material has no asserted verse-level
+// correspondence - rather than the generic "canonical-only or gap" wording,
+// which would let a consumer wrongly conclude the material is simply absent
+// from the edition when it is present under a different structure (T2; see
+// docs/known-issue-jeremiah-alignment.md).
+func noAlignmentCaveat(sourceCode string, ref Ref) string {
+	if recension.IsDivergent(ref.Book, sourceCode) {
+		return fmt.Sprintf("%s: no verse-level correspondence asserted for %s - the %s witness of this book is a different recension (the material is reordered), not a renumbering; consult it in its own numbering", sourceCode, ref, sourceCode)
+	}
+	return fmt.Sprintf("%s: no aligned verse for %s (canonical-only content or an unaligned gap - T4b)", sourceCode, ref)
 }
 
 // GetVerse returns one Citation per requested edition (more than one for an
@@ -476,7 +491,7 @@ func alignedCitations(db *sql.DB, canonicalID int64, ref Ref, info editionInfo) 
 			Ref:        ref,
 			Edition:    info.sourceCode,
 			Confidence: ConfidenceFlagged,
-			Caveat:     fmt.Sprintf("no %s alignment for %s (canonical-only content or an unaligned gap - T4b)", info.sourceCode, ref),
+			Caveat:     noAlignmentCaveat(info.sourceCode, ref),
 		}}, nil
 	}
 

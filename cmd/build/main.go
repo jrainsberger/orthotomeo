@@ -175,8 +175,8 @@ func alignAllEditions(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("align %s: %w", e.versification, err)
 		}
-		fmt.Printf("aligned %s: %d exact, %d renumber, %d merge, %d divide, %d canonical-only, %d edition-only\n",
-			e.versification, counts.Exact, counts.Renumber, counts.Merge, counts.Divide, counts.UnalignedCanonical, counts.UnalignedEdition)
+		fmt.Printf("aligned %s: %d exact, %d renumber, %d merge, %d divide, %d canonical-only, %d edition-only, %d recension-suppressed\n",
+			e.versification, counts.Exact, counts.Renumber, counts.Merge, counts.Divide, counts.UnalignedCanonical, counts.UnalignedEdition, counts.RecensionSuppressed)
 	}
 	return nil
 }

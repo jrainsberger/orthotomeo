@@ -57,8 +57,32 @@ by pointing MT 33 at LXX 32.
   substitution, or from a merge whose sizes happen to sum perfectly, still reports the full
   ceiling - counts cannot distinguish those from a real relabel. See the two locking tests
   `TestAlignCleanRenumberKeepsFullConfidence` / `TestAlignRenumberInMismatchedRegionIsCapped`.
-- **T2 (not started): model the moved block + distinct caveat type + representable absence.**
-  The three items below.
+- **T2 (landed 2026-07-21): stay honest and get out of the way.** The root cause is that
+  one method (count-based chapter DP) is applied to two different kinds of divergence:
+  *versification* (same text, renumbered - Psalms/Joel, which it bridges correctly) and
+  *recension* (different text - LXX Jeremiah is a shorter, reordered edition). No count-
+  derived signal separates them (confirmed against the real corpus: the reordered zone is
+  threaded as near-equal-size substitutions, invisible to any size cap - so T1 alone left
+  the headline JER 33 -> LXX 32 row at 0.85). The fix declares recension-divergent books
+  explicitly (`recension.IsDivergent`, currently just JER; the Greek additions to
+  Esther/Daniel are LXX-only insertions, not reorderings, so they are excluded) and, for
+  those books, has the aligner refuse to assert a verse correspondence across the reordered
+  span rather than manufacture a wrong one. The span is derived mechanically from the
+  alignment's own structural ops (`versealign.structuralCanonicalSpan`); the clean head and
+  tail keep their alignment. Verified end-to-end on the real DB: JER 1-24 keep 588 Brenton
+  rows, JER 25-51 emit **zero** rows, JER 52 keeps 34; `GetVerse(JER 33:15, Brenton)` now
+  returns a Flagged citation naming the recension divergence instead of pointing at LXX
+  32:27 at 0.85. What this deliberately does NOT do: recover the true in-zone
+  correspondences (eg MT 33:1-13 <-> LXX 40). That would need the full external
+  versification map and was declined - researchers work in LXX numbering for this book, and
+  the tool should get out of their way, not fake a bridge. Tests: `recension` package,
+  `versealign` (suppression + negative control), `retriever` (recension caveat + negative
+  control).
+
+Original T2 scope (the three items below) is thus resolved by refusal rather than by
+modelling the moved block: no distinct `moved` relation is emitted (suppressed verses get
+no row), and genuine absence is represented as "no correspondence asserted" for the whole
+reordered span.
 
 ## What to fix
 

@@ -274,6 +274,65 @@ func TestGetVerseMissingEditionRowStillAppears(t *testing.T) {
 	}
 }
 
+// TestGetVerseRecensionDivergentBookGivesRecensionCaveat covers the T2 query
+// side: a canonical Jeremiah verse whose LXX alignment was suppressed (the
+// reordered span) must be flagged with a caveat that names the recension
+// divergence and does NOT fall back to the generic "canonical-only or gap"
+// wording - which would wrongly imply the material is simply absent from the
+// LXX when it is present under a different structure.
+func TestGetVerseRecensionDivergentBookGivesRecensionCaveat(t *testing.T) {
+	db := setup(t)
+	jerBook := bookID(t, db, "JER")
+	// Canonical Jer 33:15 exists; T2 suppressed its Brenton alignment (no
+	// verse_alignment row), so the reordered material asserts no correspondence.
+	jer := insertVerse(t, db, "canonical", jerBook, 33, 15)
+	insertVerseText(t, db, jer, "KJV", "Jer.33.15", "In those days...")
+
+	cs, err := retriever.GetVerse(db, retriever.Ref{Book: "JER", Chapter: 33, Verse: 15}, []string{"Brenton"})
+	if err != nil {
+		t.Fatalf("get verse: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1", len(cs))
+	}
+	c := cs[0]
+	if c.Confidence != retriever.ConfidenceFlagged {
+		t.Errorf("confidence = %v, want Flagged", c.Confidence)
+	}
+	if !strings.Contains(c.Caveat, "recension") {
+		t.Errorf("caveat = %q, want it to name the recension divergence", c.Caveat)
+	}
+	if strings.Contains(c.Caveat, "canonical-only content") {
+		t.Errorf("recension caveat must not fall back to the generic gap wording: %q", c.Caveat)
+	}
+}
+
+// TestGetVerseNonDivergentGapKeepsGenericCaveat is the negative control: a
+// canonical verse with no alignment in a book that is NOT recension-divergent
+// keeps the generic gap wording, proving the recension caveat is scoped to
+// declared books, not applied to every gap.
+func TestGetVerseNonDivergentGapKeepsGenericCaveat(t *testing.T) {
+	db := setup(t)
+	psaBook := bookID(t, db, "PSA")
+	// A canonical Psalm verse with no Brenton alignment row - an ordinary gap.
+	psa := insertVerse(t, db, "canonical", psaBook, 42, 1)
+	insertVerseText(t, db, psa, "KJV", "Ps.42.1", "As the hart panteth...")
+
+	cs, err := retriever.GetVerse(db, retriever.Ref{Book: "PSA", Chapter: 42, Verse: 1}, []string{"Brenton"})
+	if err != nil {
+		t.Fatalf("get verse: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("citations = %d, want 1", len(cs))
+	}
+	if strings.Contains(cs[0].Caveat, "recension") {
+		t.Errorf("non-divergent gap should not get a recension caveat: %q", cs[0].Caveat)
+	}
+	if !strings.Contains(cs[0].Caveat, "canonical-only content") {
+		t.Errorf("non-divergent gap should keep the generic wording: %q", cs[0].Caveat)
+	}
+}
+
 func TestGetVerseRejectsWordOnlyEdition(t *testing.T) {
 	db := setup(t)
 	_, err := retriever.GetVerse(db, retriever.Ref{Book: "GEN", Chapter: 1, Verse: 1}, []string{"TAGNT"})
